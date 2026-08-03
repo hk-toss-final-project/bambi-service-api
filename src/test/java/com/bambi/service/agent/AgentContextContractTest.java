@@ -58,7 +58,7 @@ class AgentContextContractTest {
                 .andExpect(header("X-Request-ID", org.hamcrest.Matchers.not(org.hamcrest.Matchers.blankOrNullString())))
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
-        gateway.syncUserContext(7, AgentContextRequest.initialForSignup());
+        gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
 
         server.verify();
     }
@@ -75,7 +75,7 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.blocked_source_ids").value(empty()))
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
-        gateway.syncUserContext(7, AgentContextRequest.initialForSignup());
+        gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
 
         server.verify();
     }
@@ -91,7 +91,7 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.blockedSourceIds").doesNotExist())
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
-        gateway.syncUserContext(7, AgentContextRequest.initialForSignup());
+        gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
 
         server.verify();
     }

@@ -62,6 +62,10 @@ public class User {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    // agent 컨텍스트 동기화 버전(단조 증가). 가입 시 0 → 첫 동기화에서 1. agent 계약 §4.3.
+    @Column(name = "agent_context_version", nullable = false)
+    private int agentContextVersion;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "user_roles",
@@ -122,6 +126,18 @@ public class User {
 
     public void changeUsername(String username) {
         this.username = username;
+    }
+
+    /**
+     * agent 컨텍스트 동기화 버전을 하나 올리고(단조 증가) 새 값을 반환한다.
+     * 동기화 직전에 호출해 이 값을 {@code context_version} 으로 보낸다(계약 §4.3).
+     */
+    public int bumpAgentContextVersion() {
+        return ++this.agentContextVersion;
+    }
+
+    public int getAgentContextVersion() {
+        return agentContextVersion;
     }
 
     public OffsetDateTime getCreatedAt() {

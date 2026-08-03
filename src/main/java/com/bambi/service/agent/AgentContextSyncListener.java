@@ -1,6 +1,5 @@
 package com.bambi.service.agent;
 
-import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.user.UserRegisteredEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,16 +22,16 @@ public class AgentContextSyncListener {
 
     private static final Logger log = LoggerFactory.getLogger(AgentContextSyncListener.class);
 
-    private final AgentGateway agentGateway;
+    private final AgentContextSyncService contextSyncService;
 
-    public AgentContextSyncListener(AgentGateway agentGateway) {
-        this.agentGateway = agentGateway;
+    public AgentContextSyncListener(AgentContextSyncService contextSyncService) {
+        this.contextSyncService = contextSyncService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onUserRegistered(UserRegisteredEvent event) {
         try {
-            agentGateway.syncUserContext(event.userId(), AgentContextRequest.initialForSignup());
+            contextSyncService.syncUserContext(event.userId());
             log.info("[AgentContextSync] 가입 컨텍스트 동기화 완료 (userId={})", event.userId());
         } catch (Exception e) {
             log.warn("[AgentContextSync] 가입 컨텍스트 동기화 실패 (userId={}) — 가입은 유지, 재동기 필요",

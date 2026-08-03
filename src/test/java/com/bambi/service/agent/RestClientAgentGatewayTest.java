@@ -61,7 +61,7 @@ class RestClientAgentGatewayTest {
                 .andExpect(method(HttpMethod.PUT))
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
-        gateway.syncUserContext(7, AgentContextRequest.initialForSignup());
+        gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
 
         server.verify();
         verify(callLogger).logRequest(eq(7L), eq("/internal/v1/users/7/context"), any());
@@ -76,7 +76,7 @@ class RestClientAgentGatewayTest {
                         .body("{\"code\":\"STALE_CONTEXT_VERSION\"}")
                         .contentType(MediaType.APPLICATION_JSON));
 
-        gateway.syncUserContext(7, AgentContextRequest.initialForSignup()); // 예외 없이 통과
+        gateway.syncUserContext(7, AgentContextRequest.forVersion(1)); // 예외 없이 통과
 
         verify(callLogger).logResponse(eq(1L), eq(409), anyInt(), any());
     }
@@ -88,7 +88,7 @@ class RestClientAgentGatewayTest {
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
         ApiException ex = catchThrowableOfType(
-                () -> gateway.syncUserContext(7, AgentContextRequest.initialForSignup()),
+                () -> gateway.syncUserContext(7, AgentContextRequest.forVersion(1)),
                 ApiException.class);
 
         assertThat(ex).isNotNull();

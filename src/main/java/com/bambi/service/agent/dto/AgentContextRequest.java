@@ -23,8 +23,12 @@ public record AgentContextRequest(
         @JsonProperty("blocked_interest_ids") List<String> blockedInterestIds,
         @JsonProperty("blocked_source_ids") List<String> blockedSourceIds) {
 
-    /** 회원가입 직후 최초 동기화용 기본 컨텍스트 (버전 1, 무료, 한국어, 개인화 on, 차단 없음). */
-    public static AgentContextRequest initialForSignup() {
-        return new AgentContextRequest(1, "free", "ko", true, List.of(), List.of());
+    /**
+     * 지정 버전의 컨텍스트 요청. 필드 값은 현재 알려진 사용자 컨텍스트를 싣는다 —
+     * 설정 기능(플랜·개인화·차단)이 붙기 전에는 기본값(무료·한국어·개인화 on·차단 없음)이고,
+     * 붙으면 이 자리에서 저장된 사용자 설정으로 채우면 된다. 버전은 호출부가 단조 증가로 넘긴다.
+     */
+    public static AgentContextRequest forVersion(int version) {
+        return new AgentContextRequest(version, "free", "ko", true, List.of(), List.of());
     }
 }
