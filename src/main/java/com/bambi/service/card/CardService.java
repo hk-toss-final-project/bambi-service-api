@@ -18,6 +18,8 @@ import java.util.UUID;
 @Service
 public class CardService {
 
+    private static final String PUBLIC = "PUBLIC";
+
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
 
@@ -27,15 +29,22 @@ public class CardService {
     }
 
     /**
-     * 카드 단건 상세. 프론트 카드 상세 화면의 새로고침/직접 진입용.
-     * publicId 문자열이 UUID 형식이 아니거나(=존재할 수 없는 id) 내 카드가 아니면 NOT_FOUND.
+     * 카드 단건 상세. 카드 상세 화면 진입/새로고침용.
+     * 권한 = 내 카드이거나 PUBLIC 카드면 열람(타인 공개 카드·비로그인 게스트 포함).
+     * 남의 비공개 카드/없음/형식 오류는 존재 노출 없이 404.
      * reportId(본문 publicId)를 함께 내려 프론트가 본문 조회로 이동할 수 있게 한다.
+     *
+     * @param viewerId 조회자 id. 비로그인(게스트)이면 null — PUBLIC 카드만 볼 수 있다.
      */
     @Transactional(readOnly = true)
-    public CardResponse get(Long userId, String publicId) {
+    public CardResponse get(Long viewerId, String publicId) {
         UUID uuid = parseOrNotFound(publicId);
-        Card card = cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(uuid, userId)
+        Card card = cardRepository.findByPublicIdAndDeletedAtIsNull(uuid)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다."));
+        boolean mine = viewerId != null && card.getUserId().equals(viewerId);
+        if (!mine && !PUBLIC.equals(card.getVisibility())) {
+            throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
+        }
         return CardResponse.from(card, reportPublicId(card));
     }
 

@@ -17,7 +17,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link CardService#changeVisibility} 검증 — 소유자 공개설정 변경 / 없는 카드 404 / 잘못된 값 도메인 방어.
+ * {@link CardService} 검증 — 단건 조회 권한(내 것 or PUBLIC, 게스트 포함) / 공개설정 변경 / 도메인 방어.
  */
 class CardServiceTest {
 
@@ -25,6 +25,68 @@ class CardServiceTest {
     private final com.bambi.service.report.ReportRepository reportRepository =
             mock(com.bambi.service.report.ReportRepository.class);
     private final CardService service = new CardService(cardRepository, reportRepository);
+
+    private static Card card(long ownerId, String visibility) {
+        Card card = mock(Card.class);
+        when(card.getUserId()).thenReturn(ownerId);
+        when(card.getVisibility()).thenReturn(visibility);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(java.util.List.of());
+        when(card.getReportId()).thenReturn(null);
+        return card;
+    }
+
+    @Test
+    void 내_카드는_비공개여도_조회된다() {
+        Card mine = card(1L, "PRIVATE");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(mine));
+
+        CardResponse res = service.get(1L, UUID.randomUUID().toString());
+
+        assertThat(res).isNotNull();
+    }
+
+    @Test
+    void 남의_PUBLIC_카드는_조회된다() {
+        Card others = card(2L, "PUBLIC");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(others));
+
+        CardResponse res = service.get(1L, UUID.randomUUID().toString());   // viewer=1, owner=2
+
+        assertThat(res).isNotNull();
+    }
+
+    @Test
+    void 남의_비공개_카드는_존재_노출_없이_404() {
+        Card othersPrivate = card(2L, "PRIVATE");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(othersPrivate));
+
+        ApiException ex = catchThrowableOfType(
+                () -> service.get(1L, UUID.randomUUID().toString()), ApiException.class);
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void 게스트는_PUBLIC_카드는_보고_비공개는_404() {
+        Card pub = card(2L, "PUBLIC");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(pub));
+        assertThat(service.get(null, UUID.randomUUID().toString())).isNotNull();   // 게스트 PUBLIC OK
+
+        Card priv = card(2L, "PRIVATE");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(priv));
+        ApiException ex = catchThrowableOfType(
+                () -> service.get(null, UUID.randomUUID().toString()), ApiException.class);
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);   // 게스트 비공개 404
+    }
+
+    @Test
+    void 형식_잘못된_publicId_는_404() {
+        ApiException ex = catchThrowableOfType(
+                () -> service.get(1L, "not-a-uuid"), ApiException.class);
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);
+    }
 
     @Test
     void 소유자는_자기_카드를_공개로_바꾼다() {

@@ -28,10 +28,12 @@ public class CardController {
         this.cardService = cardService;
     }
 
+    /** 카드 단건 — 내 카드 or PUBLIC 카드면 열람(타인 공개 카드·게스트 포함, permitAll). */
     @GetMapping("/{publicId}")
     public ApiResponse<CardResponse> get(@AuthenticationPrincipal AuthPrincipal principal,
                                          @PathVariable String publicId) {
-        return ApiResponse.ok(cardService.get(principal.id(), publicId));
+        Long viewerId = principal != null ? principal.id() : null;
+        return ApiResponse.ok(cardService.get(viewerId, publicId));
     }
 
     /** 카드 공개/비공개 전환 (SNS/Week2) — 소유자만. */
