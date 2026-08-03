@@ -52,6 +52,10 @@ app:
       # 발행 claim/ack 클라이언트 구현 선택: mock(인프로세스 큐, P0) | http(실제 agent-api 호출, P1)
       # 미설정 시 mock — 로컬/데모는 mock, agent-api 붙일 땐 http.
       mode: ${AGENT_PUBLISH_MODE:mock}
+    # 저장 시 동기 Mock 즉시 카드 (P0 관통용 데모 안전판 — 제품 모델은 저장≠생성, 루트 CLAUDE.md).
+    # 비동기 발행 경로(claim→report+card)가 검증된 환경에서는 false 로 꺼서 Mock 카드가 실 카드와 섞이지 않게 한다.
+    immediate-card:
+      enabled: ${AGENT_IMMEDIATE_CARD_ENABLED:true}
   worker:
     # service-worker 발행 폴링 루프 (docs/service-integration-guide.md §4)
     publish:

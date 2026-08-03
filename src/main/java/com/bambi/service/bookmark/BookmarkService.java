@@ -18,6 +18,7 @@ import com.bambi.service.common.error.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,17 +44,22 @@ public class BookmarkService {
     // 재처리는 실제 agent POST /generations 트리거로 가야 한다(P1, 영현 스케줄러). ObjectProvider 로 선택 주입.
     private final ObjectProvider<MockPublishInbox> publishInbox;
     private final ApplicationEventPublisher eventPublisher;
+    // 저장 시 동기 Mock 즉시 카드 — P0 관통용 안전판. 제품 모델(저장≠생성) 기준으론 꺼야 하며,
+    // 비동기 발행 경로가 검증된 환경에서 AGENT_IMMEDIATE_CARD_ENABLED=false 로 끈다. 코드 제거 금지(루트 CLAUDE.md).
+    private final boolean immediateCardEnabled;
 
     public BookmarkService(BookmarkRepository bookmarkRepository,
                            CardRepository cardRepository,
                            AgentClient agentClient,
                            ObjectProvider<MockPublishInbox> publishInbox,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           @Value("${app.agent.immediate-card.enabled:true}") boolean immediateCardEnabled) {
         this.bookmarkRepository = bookmarkRepository;
         this.cardRepository = cardRepository;
         this.agentClient = agentClient;
         this.publishInbox = publishInbox;
         this.eventPublisher = eventPublisher;
+        this.immediateCardEnabled = immediateCardEnabled;
     }
 
     @Transactional
@@ -69,6 +75,16 @@ public class BookmarkService {
 
         Bookmark bookmark = new Bookmark(userId, req.hasUrl() ? req.url() : null, req.title(), req.content());
         bookmarkRepository.save(bookmark);   // PROCESSING 으로 저장, id 확보
+
+        // 즉시카드 OFF — 저장은 여기서 끝. 요약·주제는 agent 위키 파이프라인(클리핑 중계)이,
+        // 카드는 비동기 발행 경로(생성 트리거→claim→report+card)가 담당한다. card 는 null 로 내려간다
+        // (프론트는 onSaved 에서 card 를 쓰지 않고 refetch 만 한다 — 2026-08-03 실측).
+        if (!immediateCardEnabled) {
+            bookmark.completeProcessing(null);
+            eventPublisher.publishEvent(new BookmarkSavedEvent(
+                    userId, bookmark.getId(), bookmark.getUrl(), bookmark.getTitle(), bookmark.getContent()));
+            return new BookmarkCreateResponse(BookmarkResponse.from(bookmark), null);
+        }
 
         // 1) 요약/관심사 추론 (계약: /agent/bookmarks/process)
         BookmarkProcessResponse processed = agentClient.processBookmark(new BookmarkProcessRequest(
