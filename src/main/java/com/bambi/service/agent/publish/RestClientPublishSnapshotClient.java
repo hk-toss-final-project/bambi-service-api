@@ -2,8 +2,8 @@ package com.bambi.service.agent.publish;
 
 import com.bambi.service.agent.publish.dto.AckRequest;
 import com.bambi.service.agent.publish.dto.ClaimRequest;
+import com.bambi.service.agent.AgentErrors;
 import com.bambi.service.agent.publish.dto.ClaimResponse;
-import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,11 +71,10 @@ public class RestClientPublishSnapshotClient implements PublishSnapshotClient {
         } catch (RestClientResponseException e) {
             log.warn("[PublishClient] claim 실패 status={} body={}", e.getStatusCode().value(),
                     e.getResponseBodyAsString());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE,
-                    "발행 배치 claim 실패 (status=" + e.getStatusCode().value() + ")");
+            throw AgentErrors.unavailable(e, "발행 배치 claim 실패");
         } catch (RestClientException e) {
             log.warn("[PublishClient] claim 연결 실패: {}", e.getMessage());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+            throw AgentErrors.connectFailed(e);
         }
     }
 
@@ -99,11 +98,10 @@ public class RestClientPublishSnapshotClient implements PublishSnapshotClient {
         } catch (RestClientResponseException e) {
             log.warn("[PublishClient] ack 실패 batchId={} status={} body={}", batchId,
                     e.getStatusCode().value(), e.getResponseBodyAsString());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE,
-                    "발행 배치 ack 실패 (status=" + e.getStatusCode().value() + ")");
+            throw AgentErrors.unavailable(e, "발행 배치 ack 실패");
         } catch (RestClientException e) {
             log.warn("[PublishClient] ack 연결 실패 batchId={}: {}", batchId, e.getMessage());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+            throw AgentErrors.connectFailed(e);
         }
     }
 }

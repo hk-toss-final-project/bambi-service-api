@@ -61,6 +61,26 @@ public class AiResponseLog {
         return statusCode;
     }
 
+    /**
+     * 응답 기록 유무·status_code 로 처리 상태를 파생한다(목록·상세 뷰 공용 규칙).
+     * <ul>
+     *   <li>응답 기록 없음(null) → 아직 처리 중(PROCESSING)
+     *   <li>기록은 있는데 status_code null → 호출은 끝났으나 응답을 못 받음(연결 실패/타임아웃) = FAILED.
+     *       ※ 여기서 PROCESSING 으로 보던 게 "영구 처리중" 버그였다.
+     *   <li>status_code 있음 → 2xx SUCCESS, 그 외 FAILED
+     * </ul>
+     */
+    public static String deriveStatus(AiResponseLog response) {
+        if (response == null) {
+            return "PROCESSING";
+        }
+        Integer code = response.getStatusCode();
+        if (code == null) {
+            return "FAILED";
+        }
+        return (code >= 200 && code < 300) ? "SUCCESS" : "FAILED";
+    }
+
     public Integer getLatencyMs() {
         return latencyMs;
     }

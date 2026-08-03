@@ -54,32 +54,29 @@ public class PublishProcessingService {
         // 이 version 이 이긴다 → 본문(리포트) upsert 후 카드가 참조한다.
         Report report = upsertReport(userId, item);
 
-        if (existingCard.isPresent()) {
-            Card card = existingCard.get();
+        // 신규면 새 카드, 갱신이면 기존 카드 — 이후 필드 반영(출처·리포트 링크·태그)은 공통.
+        boolean isNew = existingCard.isEmpty();
+        Card card = existingCard.orElseGet(() -> Card.fromExternal(
+                userId, item.contentId(), item.version(), item.title(), item.summary(), null));
+        if (!isNew) {
             card.updateExternal(item.version(), item.title(), item.summary());
-            addSources(card, item);
-            card.linkReport(report.getId());
-            card.replaceInterestTags(item.tags());   // 발행 태그(topic) 통째 교체 — 재수신 시 최신으로
-            log.info("[PublishWorker] 리포트+카드 갱신 contentId={} (v{}), reportId={}",
-                    item.contentId(), item.version(), report.getId());
-            return true;   // dirty checking 으로 flush
         }
-
-        Card card = Card.fromExternal(
-                userId, item.contentId(), item.version(), item.title(), item.summary(), null);
         addSources(card, item);
         card.linkReport(report.getId());
-        card.replaceInterestTags(item.tags());   // 발행 태그(topic) 저장 — 없으면(null/빈) no-op
-        try {
-            cardRepository.save(card);
-        } catch (DataIntegrityViolationException e) {
-            // 동시 워커/재시도로 유니크 인덱스 충돌 → 이미 발행된 것으로 간주(멱등).
-            log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
-            return true;
+        card.replaceInterestTags(item.tags());   // 발행 태그(topic) 통째 교체 — 재수신 시 최신으로, 없으면 비움
+
+        if (isNew) {
+            try {
+                cardRepository.save(card);
+            } catch (DataIntegrityViolationException e) {
+                // 동시 워커/재시도로 유니크 인덱스 충돌 → 이미 발행된 것으로 간주(멱등).
+                log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
+                return true;
+            }
         }
-        log.info("[PublishWorker] 리포트+카드 발행 contentId={}, userId={}, v{}, reportId={}",
-                item.contentId(), userId, item.version(), report.getId());
-        return true;
+        log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
+                isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
+        return true;   // 갱신은 dirty checking, 신규는 save 로 flush
     }
 
     /** 리포트(본문) upsert. 없으면 생성(저장→id 확보), 있으면 본문·인용 교체 후 반환. */

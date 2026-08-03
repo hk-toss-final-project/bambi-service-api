@@ -1,7 +1,6 @@
 package com.bambi.service.wiki;
 
-import com.bambi.service.common.error.ApiException;
-import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.agent.AgentErrors;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
@@ -54,10 +53,9 @@ public class AgentWikiClient {
                     .retrieve()
                     .body(type);
         } catch (RestClientResponseException e) {
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE,
-                    "agent 위키 조회 실패 (status=" + e.getStatusCode().value() + ")");
+            throw AgentErrors.unavailable(e, "agent 위키 조회 실패");
         } catch (RestClientException e) {
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+            throw AgentErrors.connectFailed(e);
         }
     }
 
@@ -72,10 +70,9 @@ public class AgentWikiClient {
             if (e.getStatusCode().value() == 404) {
                 return emptyValue;
             }
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE,
-                    "agent 위키 조회 실패 (status=" + e.getStatusCode().value() + ")");
+            throw AgentErrors.unavailable(e, "agent 위키 조회 실패");
         } catch (RestClientException e) {
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+            throw AgentErrors.connectFailed(e);
         }
     }
 }

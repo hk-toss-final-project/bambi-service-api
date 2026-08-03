@@ -26,32 +26,16 @@ public record AdminAiLogDetailResponse(
 ) {
 
     public static AdminAiLogDetailResponse of(AiRequestLog request, AiResponseLog response) {
-        String email = request.getUser() != null ? request.getUser().getEmail() : null;
         return new AdminAiLogDetailResponse(
                 request.getId(),
                 request.getCreatedAt(),
-                email,
+                request.getUserEmailOrNull(),
                 request.getEndpoint(),
-                deriveStatus(response),
+                AiResponseLog.deriveStatus(response),
                 response != null ? response.getStatusCode() : null,
                 response != null ? response.getLatencyMs() : null,
                 response != null ? response.getCreatedAt() : null,
                 request.getRequestBody(),
                 response != null ? response.getResponseBody() : null);
-    }
-
-    /**
-     * 목록 뷰({@link AdminAiLogResponse})와 동일한 상태 파생 규칙.
-     * 응답 없음 → PROCESSING, status_code null(연결 실패) → FAILED, 2xx → SUCCESS, 그 외 → FAILED.
-     */
-    private static String deriveStatus(AiResponseLog response) {
-        if (response == null) {
-            return "PROCESSING";
-        }
-        Integer code = response.getStatusCode();
-        if (code == null) {
-            return "FAILED";
-        }
-        return (code >= 200 && code < 300) ? "SUCCESS" : "FAILED";
     }
 }

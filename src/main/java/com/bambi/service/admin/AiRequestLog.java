@@ -64,6 +64,11 @@ public class AiRequestLog {
         return user;
     }
 
+    /** 요청 사용자 이메일. 호출 주체가 사용자와 무관하면(user null) null. */
+    public String getUserEmailOrNull() {
+        return user != null ? user.getEmail() : null;
+    }
+
     public String getEndpoint() {
         return endpoint;
     }

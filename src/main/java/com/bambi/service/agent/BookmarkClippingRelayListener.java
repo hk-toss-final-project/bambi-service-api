@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.util.StringUtils;
 
 /**
  * 북마크 저장 완료 → agent 위키 원천 처리로 중계.
@@ -34,8 +35,8 @@ public class BookmarkClippingRelayListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onBookmarkSaved(BookmarkSavedEvent event) {
         String sourceEventId = "bookmark-" + event.bookmarkId();
-        boolean hasUrl = hasText(event.url());
-        boolean hasContent = hasText(event.content());
+        boolean hasUrl = StringUtils.hasText(event.url());
+        boolean hasContent = StringUtils.hasText(event.content());
 
         try {
             if (hasUrl && hasContent) {
@@ -55,10 +56,6 @@ public class BookmarkClippingRelayListener {
 
     /** 클리핑 title 은 필수(비어 있으면 안 됨) — 제목 없으면 대체 문구를 넣는다. */
     private String titleOrFallback(BookmarkSavedEvent event) {
-        return hasText(event.title()) ? event.title() : "저장한 자료";
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
+        return StringUtils.hasText(event.title()) ? event.title() : "저장한 자료";
     }
 }

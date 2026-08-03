@@ -3,8 +3,6 @@ package com.bambi.service.agent;
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
-import com.bambi.service.common.error.ApiException;
-import com.bambi.service.common.error.ErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -56,7 +54,7 @@ public class RestClientAgentGateway implements AgentGateway {
                     .uri(path)
                     .header("X-Request-ID", UUID.randomUUID().toString())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(request)
+                    .body(requestBody != null ? requestBody : request)   // 로그용 JSON 재사용(이중 직렬화 회피)
                     .retrieve()
                     .toEntity(String.class);
             callLogger.logResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
@@ -72,13 +70,12 @@ public class RestClientAgentGateway implements AgentGateway {
                 log.info("[AgentGateway] context 이미 최신(userId={}) — STALE 무시", userId);
                 return;
             }
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE,
-                    "agent 컨텍스트 동기화 실패 (status=" + status + ")");
+            throw AgentErrors.unavailable(e, "agent 컨텍스트 동기화 실패");
 
         } catch (RestClientException e) {
             // 연결 실패/타임아웃 등 (응답 자체가 없음)
             callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+            throw AgentErrors.connectFailed(e);
         }
     }
 
@@ -107,20 +104,19 @@ public class RestClientAgentGateway implements AgentGateway {
                     .uri(path)
                     .header("X-Request-ID", UUID.randomUUID().toString())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(request)
+                    .body(requestBody != null ? requestBody : request)   // 로그용 JSON 재사용(이중 직렬화 회피)
                     .retrieve()
                     .toEntity(String.class);
             // 202 Accepted 가 정상 — Job 접수만 확인한다(결과는 service-worker Pull).
             callLogger.logResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
 
         } catch (RestClientResponseException e) {
-            int status = e.getStatusCode().value();
-            callLogger.logResponse(reqLogId, status, elapsedMs(startNanos), e.getResponseBodyAsString());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, failMessage + " (status=" + status + ")");
+            callLogger.logResponse(reqLogId, e.getStatusCode().value(), elapsedMs(startNanos), e.getResponseBodyAsString());
+            throw AgentErrors.unavailable(e, failMessage);
 
         } catch (RestClientException e) {
             callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
-            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+            throw AgentErrors.connectFailed(e);
         }
     }
 
