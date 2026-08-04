@@ -56,8 +56,10 @@ public class RestClientGenerationClient implements GenerationClient {
                     .retrieve()
                     .toEntity(String.class);
             // 202 Accepted 가 정상 — Job 등록만 확인한다(결과는 발행 폴링으로 수령).
-            log.info("[GenerationClient] 생성 요청 userId={}, idempotencyKey={}, status={}, body={}",
-                    userId, request.idempotencyKey(), resp.getStatusCode().value(), resp.getBody());
+            // 매일 전 사용자 대상 호출이라 info 는 한 줄 요약만, 무거운 응답 body 는 debug 로 내린다.
+            log.info("[GenerationClient] 생성 요청 userId={}, idempotencyKey={}, status={}",
+                    userId, request.idempotencyKey(), resp.getStatusCode().value());
+            log.debug("[GenerationClient] 생성 응답 body userId={}: {}", userId, resp.getBody());
 
         } catch (RestClientResponseException e) {
             log.warn("[GenerationClient] 생성 요청 실패 userId={} status={} body={}",
