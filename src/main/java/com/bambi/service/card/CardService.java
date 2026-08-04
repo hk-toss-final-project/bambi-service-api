@@ -3,8 +3,11 @@ package com.bambi.service.card;
 import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.like.LikeRepository;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
+import com.bambi.service.user.User;
+import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +25,15 @@ public class CardService {
 
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
+    private final UserRepository userRepository;
+    private final LikeRepository likeRepository;
 
-    public CardService(CardRepository cardRepository, ReportRepository reportRepository) {
+    public CardService(CardRepository cardRepository, ReportRepository reportRepository,
+                       UserRepository userRepository, LikeRepository likeRepository) {
         this.cardRepository = cardRepository;
         this.reportRepository = reportRepository;
+        this.userRepository = userRepository;
+        this.likeRepository = likeRepository;
     }
 
     /**
@@ -45,7 +53,12 @@ public class CardService {
         if (!mine && !PUBLIC.equals(card.getVisibility())) {
             throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
         }
-        return CardResponse.from(card, reportPublicId(card));
+        // 상세 소셜 필드(2026-08-04, 여진 좋아요 UI): 작성자·좋아요 수·내 좋아요 여부.
+        // 단건이라 카드당 소량 조회로 충분(배치 불필요). 게스트는 liked=false.
+        User author = userRepository.findById(card.getUserId()).orElse(null);
+        long likeCount = likeRepository.countByCardId(card.getId());
+        boolean liked = viewerId != null && likeRepository.existsByUserIdAndCardId(viewerId, card.getId());
+        return CardResponse.forDetail(card, reportPublicId(card), author, likeCount, liked);
     }
 
     /**

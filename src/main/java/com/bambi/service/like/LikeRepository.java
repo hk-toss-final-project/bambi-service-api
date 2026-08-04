@@ -12,6 +12,9 @@ public interface LikeRepository extends JpaRepository<Like, LikeId> {
 
     long countByCardId(Long cardId);
 
+    /** 카드 단건 상세용 — 이 사용자가 이 카드에 좋아요를 눌렀는지. */
+    boolean existsByUserIdAndCardId(Long userId, Long cardId);
+
     /**
      * 멱등 좋아요 — 이미 눌렀으면 조용히 무시(ON CONFLICT DO NOTHING).
      * 낙관적 업데이트 더블탭/재시도에도 유니크 위반 없이 안전.

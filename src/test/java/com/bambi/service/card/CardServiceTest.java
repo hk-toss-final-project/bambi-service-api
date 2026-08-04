@@ -24,10 +24,16 @@ class CardServiceTest {
     private final CardRepository cardRepository = mock(CardRepository.class);
     private final com.bambi.service.report.ReportRepository reportRepository =
             mock(com.bambi.service.report.ReportRepository.class);
-    private final CardService service = new CardService(cardRepository, reportRepository);
+    private final com.bambi.service.user.UserRepository userRepository =
+            mock(com.bambi.service.user.UserRepository.class);
+    private final com.bambi.service.like.LikeRepository likeRepository =
+            mock(com.bambi.service.like.LikeRepository.class);
+    private final CardService service =
+            new CardService(cardRepository, reportRepository, userRepository, likeRepository);
 
     private static Card card(long ownerId, String visibility) {
         Card card = mock(Card.class);
+        when(card.getId()).thenReturn(100L);
         when(card.getUserId()).thenReturn(ownerId);
         when(card.getVisibility()).thenReturn(visibility);
         when(card.getPublicId()).thenReturn(UUID.randomUUID());
@@ -86,6 +92,33 @@ class CardServiceTest {
                 () -> service.get(1L, "not-a-uuid"), ApiException.class);
 
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void 단건_상세는_소셜_필드를_채운다_로그인_뷰어() {
+        Card others = card(2L, "PUBLIC");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(others));
+        when(likeRepository.countByCardId(100L)).thenReturn(3L);
+        when(likeRepository.existsByUserIdAndCardId(1L, 100L)).thenReturn(true);
+
+        CardResponse res = service.get(1L, UUID.randomUUID().toString());
+
+        assertThat(res.visibility()).isEqualTo("PUBLIC");
+        assertThat(res.likeCount()).isEqualTo(3L);
+        assertThat(res.liked()).isTrue();
+        assertThat(res.author()).isNotNull();   // 작성자 미조회(null user)여도 null 필드로 감싼 객체 반환
+    }
+
+    @Test
+    void 게스트_단건_상세는_liked_false_다() {
+        Card pub = card(2L, "PUBLIC");
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(pub));
+        when(likeRepository.countByCardId(100L)).thenReturn(7L);
+
+        CardResponse res = service.get(null, UUID.randomUUID().toString());
+
+        assertThat(res.likeCount()).isEqualTo(7L);
+        assertThat(res.liked()).isFalse();   // 게스트는 좋아요 조회 자체를 하지 않는다
     }
 
     @Test
