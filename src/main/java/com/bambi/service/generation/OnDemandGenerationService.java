@@ -62,9 +62,9 @@ public class OnDemandGenerationService {
      * 즉시 생성 Job 을 접수하고 트리거 응답을 반환한다. 검색 주제는 두 갈래다(2026-08-06 최종 계약):
      * <ul>
      *   <li>{@code requestedTopic} 이 오면(사용자가 홈 rail 에서 선택) <b>내 관심사에 있는 이름만</b>
-     *       허용한다. 없으면 자동 추가하지 않고 {@link ErrorCode#NOT_FOUND} 로 거절한다 — 생성 버튼이
-     *       관심사를 무의식적으로 늘리지 않게 하는 정책(여진 확정 15:51). Wiki 태그로 생성하려면
-     *       프론트가 {@code POST /api/interests} 로 명시적으로 추가한 뒤 다시 요청한다.
+     *       허용한다. 없으면 자동 추가하지 않고 {@link ErrorCode#INTEREST_NOT_FOUND}(404) 로 거절한다 —
+     *       생성 버튼이 관심사를 무의식적으로 늘리지 않게 하는 정책(여진 확정 15:51). Wiki 태그로
+     *       생성하려면 프론트가 {@code POST /api/interests} 로 명시적으로 추가한 뒤 다시 요청한다.
      *   <li>없으면 기존처럼 대표 관심사(위키 태그 score 최고)를 자동 선택한다(하위호환).
      *       관심사가 하나도 없으면 VALIDATION_ERROR.
      * </ul>
@@ -100,7 +100,7 @@ public class OnDemandGenerationService {
             // 늘리지 않게 하는 정책(여진 확정 15:51). 프론트는 404 를 받으면 선택을 초기화하고
             // /api/interests 를 재조회한 뒤, Wiki 태그는 명시적으로 추가한 다음 다시 요청한다.
             if (!interestService.existsByName(userId, topic)) {
-                throw new ApiException(ErrorCode.NOT_FOUND, "내 관심사에 없는 주제입니다.");
+                throw new ApiException(ErrorCode.INTEREST_NOT_FOUND, "내 관심사에 없는 주제입니다.");
             }
             return topic;
         }

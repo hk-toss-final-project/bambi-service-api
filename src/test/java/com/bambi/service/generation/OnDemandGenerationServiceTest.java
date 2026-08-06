@@ -166,14 +166,14 @@ class OnDemandGenerationServiceTest {
     }
 
     @Test
-    @DisplayName("내 관심사에 없는 topic 은 자동 추가하지 않고 NOT_FOUND(404) 로 거절한다")
+    @DisplayName("내 관심사에 없는 topic 은 자동 추가하지 않고 INTEREST_NOT_FOUND(404) 로 거절한다")
     void unknownTopicRejectedWithNotFound() {
         when(interestService.existsByName(28L, "양자컴퓨팅")).thenReturn(false);
 
         assertThatThrownBy(() -> service.generateForUser(28L, "양자컴퓨팅"))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).getErrorCode())
-                .isEqualTo(ErrorCode.NOT_FOUND);
+                .isEqualTo(ErrorCode.INTEREST_NOT_FOUND);
 
         // 무의식 추가 금지 — 관심사도 안 만들고 생성도 안 한다(여진 확정 15:51)
         verify(interestService, never()).create(any(Long.class), any());
