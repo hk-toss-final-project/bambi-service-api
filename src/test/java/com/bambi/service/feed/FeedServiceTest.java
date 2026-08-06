@@ -39,8 +39,11 @@ class FeedServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final com.bambi.service.report.ReportRepository reportRepository =
             mock(com.bambi.service.report.ReportRepository.class);
+    private final com.bambi.service.scrap.ScrapRepository scrapRepository =
+            mock(com.bambi.service.scrap.ScrapRepository.class);
     private final FeedService service =
-            new FeedService(cardRepository, likeRepository, followRepository, userRepository, reportRepository);
+            new FeedService(cardRepository, likeRepository, followRepository, userRepository,
+                    reportRepository, scrapRepository);
 
     @Test
     void 게스트도_공개피드를_볼_수_있고_liked_는_전부_false() {
@@ -118,12 +121,14 @@ class FeedServiceTest {
         when(cardRepository.findPublicFeedByAuthors(anyCollection(), any())).thenReturn(List.of(card));
         when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
         when(likeRepository.findLikedCardIds(anyLong(), anyCollection())).thenReturn(List.of(10L));
+        when(scrapRepository.findScrappedCardIds(anyLong(), anyCollection())).thenReturn(List.of(10L));
 
         List<PublicCardResponse> cards = service.publicCardsByAuthor(1L, authorPublicId.toString(), 20);
 
         assertThat(cards).hasSize(1);
         assertThat(cards.get(0).author().publicId()).isEqualTo(authorPublicId);
         assertThat(cards.get(0).liked()).isTrue();
+        assertThat(cards.get(0).scrapped()).isTrue();
         // PUBLIC 전용 쿼리(findPublicFeedByAuthors)를 써야 한다 — 비공개 카드 유출 방지
         verify(cardRepository, never()).findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(anyLong());
     }

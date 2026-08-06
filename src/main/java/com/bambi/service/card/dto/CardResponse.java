@@ -29,6 +29,7 @@ public record CardResponse(
         AuthorResponse author,
         Long likeCount,
         Boolean liked,
+        Boolean scrapped,
         List<SourceResponse> sources,
         OffsetDateTime createdAt) {
 
@@ -64,13 +65,14 @@ public record CardResponse(
                 null,
                 null,
                 null,
+                null,
                 sourcesOf(card),
                 card.getCreatedAt());
     }
 
-    /** 단건 상세용 — 작성자·좋아요까지 채운다. liked 는 게스트(viewer 없음)면 false. */
+    /** 단건 상세용 — 작성자·좋아요·스크랩까지 채운다. liked·scrapped 는 게스트(viewer 없음)면 false. */
     public static CardResponse forDetail(Card card, UUID reportPublicId,
-                                         User author, long likeCount, boolean liked) {
+                                         User author, long likeCount, boolean liked, boolean scrapped) {
         return new CardResponse(
                 card.getPublicId(),
                 reportPublicId,
@@ -82,6 +84,7 @@ public record CardResponse(
                 AuthorResponse.from(author),
                 likeCount,
                 liked,
+                scrapped,
                 sourcesOf(card),
                 card.getCreatedAt());
     }

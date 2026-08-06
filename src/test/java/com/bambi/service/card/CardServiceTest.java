@@ -28,8 +28,10 @@ class CardServiceTest {
             mock(com.bambi.service.user.UserRepository.class);
     private final com.bambi.service.like.LikeRepository likeRepository =
             mock(com.bambi.service.like.LikeRepository.class);
+    private final com.bambi.service.scrap.ScrapRepository scrapRepository =
+            mock(com.bambi.service.scrap.ScrapRepository.class);
     private final CardService service =
-            new CardService(cardRepository, reportRepository, userRepository, likeRepository);
+            new CardService(cardRepository, reportRepository, userRepository, likeRepository, scrapRepository);
 
     private static Card card(long ownerId, String visibility) {
         Card card = mock(Card.class);

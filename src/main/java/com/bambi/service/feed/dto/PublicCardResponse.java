@@ -22,6 +22,7 @@ public record PublicCardResponse(
         AuthorResponse author,
         long likeCount,
         boolean liked,
+        boolean scrapped,
         List<SourceResponse> sources,
         OffsetDateTime createdAt) {
 
@@ -38,7 +39,8 @@ public record PublicCardResponse(
     public record SourceResponse(String title, String url) {
     }
 
-    public static PublicCardResponse from(Card card, User author, long likeCount, boolean liked) {
+    public static PublicCardResponse from(Card card, User author, long likeCount,
+                                          boolean liked, boolean scrapped) {
         List<SourceResponse> sources = card.getSources().stream()
                 .map(s -> new SourceResponse(s.getTitle(), s.getUrl()))
                 .toList();
@@ -51,6 +53,7 @@ public record PublicCardResponse(
                 AuthorResponse.from(author),
                 likeCount,
                 liked,
+                scrapped,
                 sources,
                 card.getCreatedAt());
     }

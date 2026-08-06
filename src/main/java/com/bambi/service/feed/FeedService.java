@@ -10,6 +10,7 @@ import com.bambi.service.follow.FollowRepository;
 import com.bambi.service.like.LikeRepository;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
+import com.bambi.service.scrap.ScrapRepository;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.data.domain.PageRequest;
@@ -43,17 +44,20 @@ public class FeedService {
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
     private final ReportRepository reportRepository;
+    private final ScrapRepository scrapRepository;
 
     public FeedService(CardRepository cardRepository,
                        LikeRepository likeRepository,
                        FollowRepository followRepository,
                        UserRepository userRepository,
-                       ReportRepository reportRepository) {
+                       ReportRepository reportRepository,
+                       ScrapRepository scrapRepository) {
         this.cardRepository = cardRepository;
         this.likeRepository = likeRepository;
         this.followRepository = followRepository;
         this.userRepository = userRepository;
         this.reportRepository = reportRepository;
+        this.scrapRepository = scrapRepository;
     }
 
     @Transactional(readOnly = true)
@@ -115,10 +119,10 @@ public class FeedService {
                 .collect(Collectors.toMap(LikeRepository.CardLikeCount::getCardId,
                         LikeRepository.CardLikeCount::getCount));
         // ② 내가 좋아요한 카드 집합 (1 IN 쿼리) — 게스트(viewerId=null)는 조회 없이 전부 false
-        Set<Long> likedIds = viewerId == null
-                ? Set.of()
-                : new HashSet<>(likeRepository.findLikedCardIds(viewerId, cardIds));
-        // ③ 작성자 정보 (1 IN 쿼리)
+        Set<Long> likedIds = likedCardIds(viewerId, cardIds);
+        // ③ 내가 스크랩한 카드 집합 (1 IN 쿼리) — 게스트는 조회 없이 전부 false
+        Set<Long> scrappedIds = scrappedCardIds(viewerId, cardIds);
+        // ④ 작성자 정보 (1 IN 쿼리)
         // TODO(follow-up 이슈): 탈퇴(soft delete) 작성자의 PUBLIC 카드가 피드에 남는다.
         //   FK CASCADE 는 하드 삭제에만 반응하므로, "작성자 생존(deleted_at IS NULL) 필터"를
         //   피드 쿼리/서비스에 추가해야 한다. 이번 PR 범위 밖 — 별도 이슈로 처리.
@@ -131,8 +135,20 @@ public class FeedService {
                         card,
                         authors.get(card.getUserId()),
                         likeCounts.getOrDefault(card.getId(), 0L),
-                        likedIds.contains(card.getId())))
+                        likedIds.contains(card.getId()),
+                        scrappedIds.contains(card.getId())))
                 .toList();
+    }
+
+    /** 게스트(viewerId=null)는 조회 없이 빈 집합 — liked/scrapped 는 전부 false 가 된다. */
+    private Set<Long> likedCardIds(Long viewerId, List<Long> cardIds) {
+        return viewerId == null ? Set.of()
+                : new HashSet<>(likeRepository.findLikedCardIds(viewerId, cardIds));
+    }
+
+    private Set<Long> scrappedCardIds(Long viewerId, List<Long> cardIds) {
+        return viewerId == null ? Set.of()
+                : new HashSet<>(scrapRepository.findScrappedCardIds(viewerId, cardIds));
     }
 
     /**
@@ -153,16 +169,16 @@ public class FeedService {
         Map<Long, Long> likeCounts = likeRepository.countByCardIds(cardIds).stream()
                 .collect(Collectors.toMap(LikeRepository.CardLikeCount::getCardId,
                         LikeRepository.CardLikeCount::getCount));
-        Set<Long> likedIds = viewerId == null
-                ? Set.of()
-                : new HashSet<>(likeRepository.findLikedCardIds(viewerId, cardIds));
+        Set<Long> likedIds = likedCardIds(viewerId, cardIds);
+        Set<Long> scrappedIds = scrappedCardIds(viewerId, cardIds);
 
         return cards.stream()
                 .map(card -> PublicCardResponse.from(
                         card,
                         author,
                         likeCounts.getOrDefault(card.getId(), 0L),
-                        likedIds.contains(card.getId())))
+                        likedIds.contains(card.getId()),
+                        scrappedIds.contains(card.getId())))
                 .toList();
     }
 
