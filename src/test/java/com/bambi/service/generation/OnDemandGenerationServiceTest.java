@@ -1,4 +1,4 @@
-﻿package com.bambi.service.generation;
+package com.bambi.service.generation;
 
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
