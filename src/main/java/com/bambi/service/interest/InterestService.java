@@ -62,6 +62,17 @@ public class InterestService {
                 .toList();
     }
 
+    /**
+     * 이름으로 내 관심사 존재 여부를 확인한다(soft delete 제외).
+     * 온디맨드 생성이 "선택 주제가 내 관심사에 있는지" 검증하는 데 쓴다 — 이름 기준인 이유는
+     * 온보딩 관심사(service id)와 LLM Wiki 태그(agent id)의 ID 체계가 달라서다(2026-08-06 계약).
+     */
+    @Transactional(readOnly = true)
+    public boolean existsByName(Long userId, String name) {
+        return name != null
+                && interestRepository.existsByUserIdAndNameAndDeletedAtIsNull(userId, name.strip());
+    }
+
     @Transactional
     public InterestResponse rename(Long userId, Long interestId, InterestRequest req) {
         var selection = resolveSelection(req);

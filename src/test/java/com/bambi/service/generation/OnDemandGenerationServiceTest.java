@@ -147,11 +147,12 @@ class OnDemandGenerationServiceTest {
         assertThat(response.id()).isNotBlank();
     }
 
-    /* ===== 사용자 선택 topic 경로 (2026-08-06 계약: body {topic} + 관심사 원자 처리) ===== */
+    /* ===== 사용자 선택 topic 경로 (2026-08-06 최종 계약: body {topic}, 미존재 시 404 거절) ===== */
 
     @Test
-    @DisplayName("topic 을 지정하면 위키 조회 없이 그 주제로 접수하고, 관심사에 원자 추가한다")
-    void requestedTopicSkipsWikiAndEnsuresInterest() {
+    @DisplayName("내 관심사에 있는 topic 을 지정하면 위키 조회 없이 그 주제로 접수한다")
+    void requestedTopicUsesItDirectly() {
+        when(interestService.existsByName(28L, "양자컴퓨팅")).thenReturn(true);
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-7");
 
         GenerationTriggerResponse response = service.generateForUser(28L, "양자컴퓨팅");
@@ -159,41 +160,25 @@ class OnDemandGenerationServiceTest {
         assertThat(response.status()).isEqualTo("accepted");
         // 대표 관심사 자동 선택 경로를 타지 않는다
         verify(wikiClient, never()).getTags(any(Long.class));
-        // 선택 주제가 관심사에 원자 반영된다 (USER 직접 입력, taxonomy 없음)
-        ArgumentCaptor<com.bambi.service.interest.dto.InterestRequest> interestCaptor =
-                ArgumentCaptor.forClass(com.bambi.service.interest.dto.InterestRequest.class);
-        verify(interestService).create(eq(28L), interestCaptor.capture());
-        assertThat(interestCaptor.getValue().name()).isEqualTo("양자컴퓨팅");
-        assertThat(interestCaptor.getValue().isTaxonomySelection()).isFalse();
-        // 생성 요청 topic = 선택 주제
         ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
         verify(generationClient).requestGeneration(eq(28L), captor.capture());
         assertThat(captor.getValue().topic()).isEqualTo("양자컴퓨팅");
     }
 
     @Test
-    @DisplayName("선택 topic 이 이미 내 관심사면(DUPLICATE_RESOURCE) 추가 없이 통과하고 생성한다")
-    void duplicateInterestPassesThrough() {
-        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-7");
-        when(interestService.create(eq(28L), any()))
-                .thenThrow(new ApiException(ErrorCode.DUPLICATE_RESOURCE, "이미 있는 관심사"));
+    @DisplayName("내 관심사에 없는 topic 은 자동 추가하지 않고 NOT_FOUND(404) 로 거절한다")
+    void unknownTopicRejectedWithNotFound() {
+        when(interestService.existsByName(28L, "양자컴퓨팅")).thenReturn(false);
 
-        GenerationTriggerResponse response = service.generateForUser(28L, "양자컴퓨팅");
+        assertThatThrownBy(() -> service.generateForUser(28L, "양자컴퓨팅"))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getErrorCode())
+                .isEqualTo(ErrorCode.NOT_FOUND);
 
-        assertThat(response.status()).isEqualTo("accepted");
-        verify(generationClient).requestGeneration(eq(28L), any());
-    }
-
-    @Test
-    @DisplayName("관심사 반영이 중복 외 사유로 실패하면 생성하지 않는다 (선택 주제 = 관심사 포함이 전제)")
-    void interestFailureBlocksGeneration() {
-        when(interestService.create(eq(28L), any()))
-                .thenThrow(new ApiException(ErrorCode.VALIDATION_ERROR, "이름이 너무 깁니다"));
-
-        assertThatThrownBy(() -> service.generateForUser(28L, "너무 긴 이름"))
-                .isInstanceOf(ApiException.class);
-
+        // 무의식 추가 금지 — 관심사도 안 만들고 생성도 안 한다(여진 확정 15:51)
+        verify(interestService, never()).create(any(Long.class), any());
         verify(generationClient, never()).requestGeneration(any(Long.class), any());
+        verify(pendingRepository, never()).insertPending(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -207,7 +192,7 @@ class OnDemandGenerationServiceTest {
         ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
         verify(generationClient).requestGeneration(eq(28L), captor.capture());
         assertThat(captor.getValue().topic()).isEqualTo("SK하이닉스");
-        verify(interestService, never()).create(any(Long.class), any());
+        verify(interestService, never()).existsByName(any(Long.class), any());
     }
 }
 
