@@ -77,7 +77,8 @@ public class GenerationScheduler {
                         topic,
                         contentType,
                         null,   // language — 컨텍스트 선호 언어 사용
-                        null);  // scheduled_at — 정시 호출이라 즉시 실행(예약 필요 시 +09:00 포함해 지정)
+                        null,   // scheduled_at — 정시 호출이라 즉시 실행(예약 필요 시 +09:00 포함해 지정)
+                        GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING);  // agent 가 snapshot 에 에코
                 String agentJobId = generationClient.requestGeneration(userId, request);
                 // 접수 성공 후 펜딩 영속화(MORNING_BRIEFING) — 온디맨드와 같은 결정적 id 규칙.
                 // 재실행·재시도는 같은 멱등키 → 같은 id 라 중복 행이 생기지 않는다.

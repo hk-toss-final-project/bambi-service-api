@@ -74,8 +74,10 @@ public class OnDemandGenerationService {
      */
     public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
         String topic = resolveTopic(userId, requestedTopic);
+        // report_type 을 요청에 실어 agent 가 발행 snapshot 에 에코하게 한다(2026-08-06 계약).
         GenerationRequest request = new GenerationRequest(
-                onDemandKey(userId), topic, contentType, null, null);
+                onDemandKey(userId), topic, contentType, null, null,
+                GenerationPendingService.REPORT_TYPE_ON_DEMAND);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
         String agentJobId = generationClient.requestGeneration(userId, request);
         // 접수 성공 후 펜딩 영속화(ON_DEMAND) — id 는 멱등키 파생이라 트리거 응답과 같은 값.
