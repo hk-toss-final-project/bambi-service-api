@@ -22,7 +22,10 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
     }
 
-    /** Agent 리포트가 Service DB에 신규 저장된 뒤 멱등 완료 알림을 만든다. */
+    /**
+     * Agent 리포트가 Service DB에 신규 저장된 뒤 멱등 완료 알림을 만든다.
+     * @param reportType 생성 유형(MORNING_BRIEFING|ON_DEMAND) — claim 페이로드에 없으면 null(관용).
+     */
     @Transactional
     public void notifyReportReady(
             Long userId,
@@ -30,13 +33,15 @@ public class NotificationService {
             Integer version,
             String title,
             String summary,
-            UUID reportPublicId) {
+            UUID reportPublicId,
+            String reportType) {
         notificationRepository.insertReportReady(
                 userId,
                 "report-ready:" + contentId + ":v" + version,
                 truncate("새 리포트가 준비됐어요: " + title, 200),
                 truncate(summary, 500),
-                "/report/" + reportPublicId);
+                "/report/" + reportPublicId,
+                reportType);
     }
 
     /** 최근 알림과 읽지 않은 개수를 반환한다. */

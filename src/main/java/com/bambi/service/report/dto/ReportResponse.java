@@ -9,12 +9,14 @@ import java.util.UUID;
 /**
  * 리포트(본문) 상세 응답 — 카드 상세 화면의 본문/인용 노출용.
  * 대외 식별자는 publicId(UUID). 카드 요약과 달리 body(본문)를 포함한다.
+ * reportType = 생성 유형(MORNING_BRIEFING|ON_DEMAND, nullable) — 기존 생성분·롤아웃 전 발행은 null.
  */
 public record ReportResponse(
         UUID publicId,
         String title,
         String summary,
         String body,
+        String reportType,
         List<CitationResponse> citations,
         OffsetDateTime createdAt) {
 
@@ -30,6 +32,7 @@ public record ReportResponse(
                 report.getTitle(),
                 report.getSummary(),
                 report.getBody(),
+                report.getReportType(),
                 citations,
                 report.getCreatedAt());
     }

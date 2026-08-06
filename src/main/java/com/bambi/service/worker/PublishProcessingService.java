@@ -70,6 +70,7 @@ public class PublishProcessingService {
         addSources(card, item);
         card.linkReport(report.getId());
         card.replaceInterestTags(item.interestTags());   // content_tags 우선(없으면 topic 폴백) 통째 교체
+        card.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null 유지 — 관용)
 
         if (isNew) {
             try {
@@ -85,7 +86,8 @@ public class PublishProcessingService {
                     item.version(),
                     item.title(),
                     item.summary(),
-                    report.getPublicId());
+                    report.getPublicId(),
+                    item.normalizedReportType());
         }
         log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
                 isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
@@ -100,10 +102,12 @@ public class PublishProcessingService {
             report = Report.fromExternal(
                     userId, item.contentId(), item.version(), item.title(), item.summary(), item.body());
             addCitations(report, item);
+            report.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null — 관용)
             return reportRepository.save(report);   // id 확보(카드가 참조)
         }
         report.updateBody(item.version(), item.title(), item.summary(), item.body());
         addCitations(report, item);   // updateBody 가 인용을 비웠으므로 다시 채운다
+        report.applyReportType(item.normalizedReportType());   // null 재발행은 기존 유형 유지
         return report;   // dirty checking
     }
 

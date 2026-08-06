@@ -17,6 +17,9 @@ import java.util.UUID;
  * 상세 화면이 소유권·공개 여부·좋아요 초기 상태를 구성하는 용도(2026-08-04, 여진 요청).
  * 목록(내 피드)·저장 응답 등 다른 경로에서는 null 이다(배치 조회 없이 채우면 N+1 — 필요해지면
  * FeedService 배치 패턴으로 확장). visibility 는 카드 자체 값이라 모든 경로에서 채워진다.
+ *
+ * reportType = 생성 유형(MORNING_BRIEFING|ON_DEMAND, nullable) — 발행 시점에 카드에 복제 저장된
+ * 카드 자체 값이라 모든 경로에서 채워진다. 기존 생성분·즉시 카드·롤아웃 전 발행은 null.
  */
 public record CardResponse(
         UUID publicId,
@@ -26,6 +29,7 @@ public record CardResponse(
         String whyForYou,
         List<String> tags,
         String visibility,
+        String reportType,
         AuthorResponse author,
         Long likeCount,
         Boolean liked,
@@ -61,6 +65,7 @@ public record CardResponse(
                 card.getWhyForYou(),
                 tagsOf(card),
                 card.getVisibility(),
+                card.getReportType(),
                 null,
                 null,
                 null,
@@ -79,6 +84,7 @@ public record CardResponse(
                 card.getWhyForYou(),
                 tagsOf(card),
                 card.getVisibility(),
+                card.getReportType(),
                 AuthorResponse.from(author),
                 likeCount,
                 liked,

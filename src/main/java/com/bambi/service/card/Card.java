@@ -64,6 +64,11 @@ public class Card {
     @Column(name = "report_id")
     private Long reportId;
 
+    // 생성 유형(MORNING_BRIEFING|ON_DEMAND). 리포트와 같은 값을 발행 시점에 복제 저장 —
+    // CardResponse 가 리포트 조인 없이 서빙되는 경로(즉시 카드 등)에서도 노출 가능하게.
+    @Column(name = "report_type", length = 30)
+    private String reportType;
+
     // 관심사 태그 (why_for_you 폐기 대체) — agent 가 붙인 topic 문자열 집합.
     @ElementCollection
     @CollectionTable(name = "card_interest_tags", joinColumns = @JoinColumn(name = "card_id"))
@@ -129,6 +134,16 @@ public class Card {
         this.reportId = reportId;
     }
 
+    /**
+     * 생성 유형 반영(신규·재수신 공통). Report.applyReportType 과 같은 관용 정책 —
+     * 값 없는 재발행이 이미 저장된 유형을 지우지 않게 null 은 무시한다.
+     */
+    public void applyReportType(String reportType) {
+        if (reportType != null) {
+            this.reportType = reportType;
+        }
+    }
+
     public void addInterestTag(String tag) {
         if (tag != null && !tag.isBlank()) {
             interestTags.add(tag.strip());
@@ -192,6 +207,10 @@ public class Card {
 
     public Long getReportId() {
         return reportId;
+    }
+
+    public String getReportType() {
+        return reportType;
     }
 
     public Set<String> getInterestTags() {

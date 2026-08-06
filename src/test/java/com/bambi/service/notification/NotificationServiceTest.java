@@ -20,14 +20,28 @@ class NotificationServiceTest {
         NotificationService service = new NotificationService(repository);
         UUID reportId = UUID.randomUUID();
 
-        service.notifyReportReady(7L, "content-1", 2, "제목", "요약", reportId);
+        service.notifyReportReady(7L, "content-1", 2, "제목", "요약", reportId, "MORNING_BRIEFING");
 
         verify(repository).insertReportReady(
                 7L,
                 "report-ready:content-1:v2",
                 "새 리포트가 준비됐어요: 제목",
                 "요약",
-                "/report/" + reportId);
+                "/report/" + reportId,
+                "MORNING_BRIEFING");
+    }
+
+    @Test
+    void 생성_유형이_없는_발행도_알림은_그대로_만든다() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        NotificationService service = new NotificationService(repository);
+        UUID reportId = UUID.randomUUID();
+
+        service.notifyReportReady(7L, "content-1", 1, "제목", "요약", reportId, null);   // 롤아웃 전 관용
+
+        verify(repository).insertReportReady(
+                eq(7L), eq("report-ready:content-1:v1"), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -38,10 +52,11 @@ class NotificationServiceTest {
         ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
 
         service.notifyReportReady(
-                7L, "content-1", 1, "가".repeat(500), "나".repeat(700), UUID.randomUUID());
+                7L, "content-1", 1, "가".repeat(500), "나".repeat(700), UUID.randomUUID(), null);
 
         verify(repository).insertReportReady(
-                eq(7L), anyString(), title.capture(), body.capture(), anyString());
+                eq(7L), anyString(), title.capture(), body.capture(), anyString(),
+                org.mockito.ArgumentMatchers.isNull());
         assertThat(title.getValue()).hasSize(200);
         assertThat(body.getValue()).hasSize(500);
     }

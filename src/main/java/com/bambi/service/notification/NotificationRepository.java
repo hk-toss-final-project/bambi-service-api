@@ -18,13 +18,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     Optional<Notification> findByIdAndUserId(Long id, Long userId);
 
-    /** 같은 Agent 발행 이벤트를 재수신해도 알림을 한 번만 만든다. */
+    /** 같은 Agent 발행 이벤트를 재수신해도 알림을 한 번만 만든다. reportType 은 null 허용(관용). */
     @Modifying
     @Query(value = """
             INSERT INTO service.notifications (
-                user_id, event_key, type, title, body, target_path
+                user_id, event_key, type, title, body, target_path, report_type
             ) VALUES (
-                :userId, :eventKey, 'REPORT_READY', :title, :body, :targetPath
+                :userId, :eventKey, 'REPORT_READY', :title, :body, :targetPath, :reportType
             )
             ON CONFLICT (user_id, event_key) DO NOTHING
             """, nativeQuery = true)
@@ -33,5 +33,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("eventKey") String eventKey,
             @Param("title") String title,
             @Param("body") String body,
-            @Param("targetPath") String targetPath);
+            @Param("targetPath") String targetPath,
+            @Param("reportType") String reportType);
 }

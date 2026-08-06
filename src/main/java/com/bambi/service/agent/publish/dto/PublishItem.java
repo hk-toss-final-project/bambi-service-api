@@ -20,6 +20,10 @@ import java.util.List;
  * <p>userId 는 agent 계약상 문자열이다(agent 는 사용자 ID 를 불투명 식별자로 다룬다).
  * service-db 의 users.id 는 Long 이므로 {@link #userIdAsLong()} 로 변환해서 쓴다.
  * agent 가 UUID 등 숫자가 아닌 ID 를 쓰기로 바뀌면 이 메서드만 고치면 된다.
+ *
+ * <p>{@code report_type} — 생성 유형(MORNING_BRIEFING|ON_DEMAND, 2026-08-06 합의).
+ * 소라(agent 게이트웨이)가 단계적으로 추가하는 필드라 아직 안 오는 스냅샷이 대부분이다 —
+ * 없으면 null 로 관용 파싱한다({@link #normalizedReportType()}). 발행 처리를 절대 깨지 않는다.
  */
 public record PublishItem(
         @JsonProperty("content_id") String contentId,
@@ -31,7 +35,8 @@ public record PublishItem(
         @JsonProperty("body") String body,
         @JsonProperty("citations") List<Citation> citations,
         @JsonProperty("tags") List<String> tags,
-        @JsonProperty("content_tags") List<String> contentTags) {
+        @JsonProperty("content_tags") List<String> contentTags,
+        @JsonProperty("report_type") String reportType) {
 
     /**
      * 카드에 저장·노출할 관심사 태그. 리포트 내용 기반 {@code content_tags} 를 우선하고,
@@ -42,6 +47,19 @@ public record PublishItem(
             return contentTags;
         }
         return tags != null ? tags : List.of();
+    }
+
+    /**
+     * 저장용 생성 유형. 계약이 아직 단계적 롤아웃이라 관용 파싱한다 —
+     * 미도착(null)·공백은 null, 컬럼 길이(30)를 넘는 예상 밖 값도 저장 실패로 발행을
+     * 깨뜨리는 대신 null 로 다룬다(유형 미상). 값 자체는 열거 검증 없이 그대로 보존한다.
+     */
+    public String normalizedReportType() {
+        if (reportType == null || reportType.isBlank()) {
+            return null;
+        }
+        String value = reportType.strip();
+        return value.length() > 30 ? null : value;
     }
 
     /**

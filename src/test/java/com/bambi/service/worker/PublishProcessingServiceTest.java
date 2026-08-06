@@ -32,10 +32,10 @@ class PublishProcessingServiceTest {
             new PublishProcessingService(cardRepository, reportRepository, notificationService);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
-        // content_tags 미도착(단계적 롤아웃 전) → tags(topic)로 폴백되는 경로
+        // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"), null);
+                List.of("코스피"), null, null);
     }
 
     @Test
@@ -54,13 +54,58 @@ class PublishProcessingServiceTest {
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());                   // 카드(요약)도 저장
         assertThat(cardCaptor.getValue().getInterestTags()).containsExactly("코스피");   // 발행 태그 저장
+        // report_type 미도착 스냅샷 → 카드·리포트·알림 모두 null (관용 파싱, 기존 계약 그대로)
+        assertThat(reportCaptor.getValue().getReportType()).isNull();
+        assertThat(cardCaptor.getValue().getReportType()).isNull();
         verify(notificationService).notifyReportReady(
                 org.mockito.ArgumentMatchers.eq(1L),
                 org.mockito.ArgumentMatchers.eq("c1"),
                 org.mockito.ArgumentMatchers.eq(1),
                 org.mockito.ArgumentMatchers.eq("제목"),
                 org.mockito.ArgumentMatchers.eq("요약"),
-                any());
+                any(),
+                org.mockito.ArgumentMatchers.isNull());
+    }
+
+    @Test
+    void report_type이_오면_리포트와_카드에_저장하고_알림에도_싣는다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of("반도체"), "ON_DEMAND");
+
+        service.upsert(item);
+
+        ArgumentCaptor<Report> reportCaptor = ArgumentCaptor.forClass(Report.class);
+        verify(reportRepository).save(reportCaptor.capture());
+        assertThat(reportCaptor.getValue().getReportType()).isEqualTo("ON_DEMAND");
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getReportType()).isEqualTo("ON_DEMAND");   // 조인 없이 서빙용 복제
+        verify(notificationService).notifyReportReady(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.eq("c1"),
+                org.mockito.ArgumentMatchers.eq(1),
+                org.mockito.ArgumentMatchers.eq("제목"),
+                org.mockito.ArgumentMatchers.eq("요약"),
+                any(),
+                org.mockito.ArgumentMatchers.eq("ON_DEMAND"));
+    }
+
+    @Test
+    void report_type_없는_재발행은_이미_저장된_유형을_지우지_않는다() {
+        Card existingCard = Card.fromExternal(1L, "c1", 1, "제목", "요약", null);
+        existingCard.applyReportType("MORNING_BRIEFING");
+        Report existingReport = Report.fromExternal(1L, "c1", 1, "제목", "요약", "본문");
+        existingReport.applyReportType("MORNING_BRIEFING");
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingCard));
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
+
+        service.upsert(item("c1", 2, "새 제목", "새 요약"));   // report_type null 재발행(구버전 agent·롤백)
+
+        assertThat(existingCard.getReportType()).isEqualTo("MORNING_BRIEFING");
+        assertThat(existingReport.getReportType()).isEqualTo("MORNING_BRIEFING");
     }
 
     @Test
@@ -70,7 +115,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"));
+                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null);
 
         service.upsert(item);
 
@@ -105,7 +150,7 @@ class PublishProcessingServiceTest {
         verify(cardRepository, never()).save(any(Card.class));
         verify(reportRepository, never()).save(any(Report.class));
         verify(notificationService, never()).notifyReportReady(
-                any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

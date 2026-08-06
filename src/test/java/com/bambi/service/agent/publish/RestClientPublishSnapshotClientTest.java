@@ -76,6 +76,29 @@ class RestClientPublishSnapshotClientTest {
         assertThat(resp.items().get(0).tags()).containsExactly("코스피");   // topic 에코 파싱
         assertThat(resp.items().get(0).contentTags()).containsExactly("외국인 수급", "반도체주");   // content_tags 파싱
         assertThat(resp.items().get(0).interestTags()).containsExactly("외국인 수급", "반도체주");   // 노출용은 content_tags 우선
+        // report_type 미도착(소라 게이트웨이 롤아웃 전) 스냅샷 → null 관용 파싱, 발행 안 깨짐
+        assertThat(resp.items().get(0).reportType()).isNull();
+        assertThat(resp.items().get(0).normalizedReportType()).isNull();
+    }
+
+    @Test
+    @DisplayName("claim: report_type 이 오면 그대로 파싱한다 (MORNING_BRIEFING|ON_DEMAND)")
+    void claimParsesReportTypeWhenPresent() {
+        String agentBody = """
+                {"batch_id":"batch-2","worker_id":"w1","lease_expires_at":"2026-08-06T02:00:00Z",
+                 "items":[
+                   {"content_id":"gen-1","user_id":"23","version":1,"snapshot_hash":"h1",
+                    "title":"아침 브리핑","summary":"요약","body":"본문",
+                    "citations":[],"tags":[],"content_tags":["반도체"],
+                    "report_type":"MORNING_BRIEFING"}]}
+                """;
+        server.expect(requestTo("http://agent.local/internal/v1/publish-snapshot-batches/claim"))
+                .andRespond(withSuccess(agentBody, MediaType.APPLICATION_JSON));
+
+        ClaimResponse resp = client.claim(new ClaimRequest("w1", 50, 120));
+
+        assertThat(resp.items().get(0).reportType()).isEqualTo("MORNING_BRIEFING");
+        assertThat(resp.items().get(0).normalizedReportType()).isEqualTo("MORNING_BRIEFING");
     }
 
     @Test

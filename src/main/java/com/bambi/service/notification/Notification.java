@@ -36,6 +36,11 @@ public class Notification {
     @Column(name = "target_path", length = 500)
     private String targetPath;
 
+    // 생성 유형(MORNING_BRIEFING|ON_DEMAND). 알림은 발행(claim) 시점에 만들어져 그때 값을
+    // 그대로 저장한다 — 조회 시 리포트 재조인 없이 바로 내린다. 없으면 null(기존분·롤아웃 전).
+    @Column(name = "report_type", length = 30)
+    private String reportType;
+
     @Column(name = "read_at")
     private OffsetDateTime readAt;
 
@@ -74,6 +79,10 @@ public class Notification {
 
     public String getTargetPath() {
         return targetPath;
+    }
+
+    public String getReportType() {
+        return reportType;
     }
 
     public OffsetDateTime getReadAt() {

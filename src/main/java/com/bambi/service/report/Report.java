@@ -52,6 +52,10 @@ public class Report {
     @Column(name = "external_version")
     private Integer externalVersion;
 
+    // 생성 유형(MORNING_BRIEFING|ON_DEMAND). claim 페이로드에 없으면 null(기존 생성분·롤아웃 전).
+    @Column(name = "report_type", length = 30)
+    private String reportType;
+
     @OneToMany(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = true)
     @BatchSize(size = 100)
     private List<ReportCitation> citations = new ArrayList<>();
@@ -86,6 +90,16 @@ public class Report {
 
     public void addCitation(String title, String url) {
         citations.add(new ReportCitation(this, title, url));
+    }
+
+    /**
+     * 생성 유형 반영(신규·재수신 공통). 관용 정책 — 값이 온 발행만 반영하고,
+     * 값 없는 재발행(구버전 agent·롤백)이 이미 저장된 유형을 지우지 않게 null 은 무시한다.
+     */
+    public void applyReportType(String reportType) {
+        if (reportType != null) {
+            this.reportType = reportType;
+        }
     }
 
     /** 발행 재수신(더 큰 version)으로 본문을 갱신. 인용은 통째로 교체한다. */
@@ -123,6 +137,10 @@ public class Report {
 
     public Integer getExternalVersion() {
         return externalVersion;
+    }
+
+    public String getReportType() {
+        return reportType;
     }
 
     public List<ReportCitation> getCitations() {
