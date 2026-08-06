@@ -64,10 +64,22 @@ public class AgentContextSyncService {
         } catch (StaleContextVersionException e) {
             // service 로컬 카운터가 agent 실제 버전보다 낮아 거절됨 → agent 가 준 현재 버전에 맞춰 1회 재전송.
             // (예전엔 여기서 조용히 넘어가 관심사가 영영 반영 안 되던 버그 — 유림 08-06)
-            int reconciled = versionAllocator.reconcile(userId, e.currentVersion());
-            log.info("[AgentContextSync] 버전 정합 재전송 (userId={}, agentCurrent={}, 재전송버전={})",
-                    userId, e.currentVersion(), reconciled);
+            reconcileAndResend(userId, e.currentVersion(), contextInterests);
+        }
+    }
+
+    /** agent 현재 버전에 맞춰 1회 재전송한다. 재전송도 STALE 이면 재경합이므로 다음 동기화에 위임한다. */
+    private void reconcileAndResend(long userId, int agentCurrentVersion, ContextInterests contextInterests) {
+        int reconciled = versionAllocator.reconcile(userId, agentCurrentVersion);
+        log.info("[AgentContextSync] 버전 정합 재전송 (userId={}, agentCurrent={}, 재전송버전={})",
+                userId, agentCurrentVersion, reconciled);
+        try {
             agentGateway.syncUserContext(userId, toRequest(reconciled, contextInterests));
+        } catch (StaleContextVersionException retry) {
+            // 재전송도 STALE = 그 사이 다른 동기화가 버전을 또 올린 재경합. 실패가 아니므로 500 으로 터뜨리지 않고,
+            // reconcile 로 카운터는 이미 전진했으니 다음 관심사 변경/동기화가 최신 버전으로 자연 재시도한다.
+            log.warn("[AgentContextSync] 재전송도 STALE(userId={}, agentCurrent={}) — 재경합, 다음 동기화에 위임",
+                    userId, retry.currentVersion());
         }
     }
 

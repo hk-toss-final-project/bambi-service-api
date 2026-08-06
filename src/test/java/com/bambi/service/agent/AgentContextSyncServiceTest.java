@@ -14,6 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -90,6 +91,19 @@ class AgentContextSyncServiceTest {
         verify(agentGateway, times(2)).syncUserContext(anyLong(), captor.capture());
         // 재전송은 정합된 버전(8)으로 나가야 한다
         assertThat(captor.getAllValues().get(1).contextVersion()).isEqualTo(8);
+    }
+
+    @Test
+    void 재전송도_STALE이면_500으로_터뜨리지_않고_다음_동기화에_위임한다() {
+        when(versionAllocator.reconcile(1L, 7)).thenReturn(8);
+        // 첫 전송·재전송 둘 다 STALE(재경합) — 예외가 밖으로 새면 sync 엔드포인트가 500 이 된다
+        doThrow(new StaleContextVersionException(7))
+                .doThrow(new StaleContextVersionException(9))
+                .when(agentGateway).syncUserContext(anyLong(), any());
+
+        assertThatCode(() -> service.syncUserContext(1L)).doesNotThrowAnyException();
+
+        verify(agentGateway, times(2)).syncUserContext(anyLong(), any());
     }
 
     @Test
