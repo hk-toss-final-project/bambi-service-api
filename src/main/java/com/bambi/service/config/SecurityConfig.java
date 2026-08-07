@@ -62,9 +62,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/health", "/api/version", "/api/interest-taxonomy").permitAll()
                         .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        // 본인 전용 경로는 아래 공개 GET 목록보다 **먼저** 선언한다 —
+                        // 매처는 선언 순서로 평가되므로, 뒤에 두면 `/api/reports/*` 와일드카드에
+                        // 먼저 걸려 permitAll 이 된다. 그러면 인증 없이 컨트롤러까지 들어와
+                        // `@AuthenticationPrincipal` 이 null 이 되고 NPE → 401 대신 500 이 나간다.
+                        .requestMatchers(HttpMethod.GET, "/api/reports/pending").authenticated()
                         // 공개 피드·공개 프로필은 비로그인 열람 허용 (팀 정책: 홈=공개 SNS).
                         // GET 만 공개 — 팔로우/좋아요/공개설정 등 쓰기는 아래 authenticated 로 막힌다.
                         // 팔로잉 스코프(?following=true)는 로그인 전제라 서비스에서 401 을 던진다.
+                        // `/api/reports/*` 는 게스트의 **공개 보고서 본문**(#30) 조회용이다.
                         .requestMatchers(HttpMethod.GET, "/api/feed/public", "/api/users/*/profile",
                                 "/api/users/*/cards", "/api/cards/*", "/api/reports/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
