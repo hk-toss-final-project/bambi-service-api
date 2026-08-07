@@ -74,4 +74,57 @@ class WikiTagsResponseTest {
         assertThat(WikiTagsResponse.empty().topTag()).isEmpty();
         assertThat(WikiTagsResponse.empty().topTopic()).isEmpty();
     }
+
+    @Test
+    @DisplayName("상위 N개는 score 내림차순으로 잘라 준다 — 아침 브리핑 topics[] 용")
+    void topTagsReturnsHighestScoresInOrder() {
+        WikiTagsResponse response = of(
+                tag("t-1", "삼성전자", 0.95),
+                tag("t-2", "SK하이닉스", 1.0),
+                tag("t-3", "KT", 0.85),
+                tag("t-4", "주가변동", 0.98));
+
+        assertThat(response.topTags(3))
+                .extracting(WikiTag::tag)
+                .containsExactly("SK하이닉스", "주가변동", "삼성전자");
+    }
+
+    @Test
+    @DisplayName("가진 것보다 많이 달라고 하면 있는 만큼만 준다")
+    void topTagsReturnsWhatItHas() {
+        WikiTagsResponse response = of(tag("t-1", "SK하이닉스", 1.0));
+
+        assertThat(response.topTags(5)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("limit 이 0 이하면 빈 목록")
+    void nonPositiveLimitGivesEmptyList() {
+        WikiTagsResponse response = of(tag("t-1", "SK하이닉스", 1.0));
+
+        assertThat(response.topTags(0)).isEmpty();
+        assertThat(response.topTags(-1)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("동점이면 응답에 먼저 온 태그가 앞선다 — 같은 응답이면 결과도 항상 같다")
+    void tiesKeepResponseOrder() {
+        WikiTagsResponse response = of(
+                tag("t-1", "먼저", 0.9),
+                tag("t-2", "나중", 0.9));
+
+        assertThat(response.topTags(2))
+                .extracting(WikiTag::tag)
+                .containsExactly("먼저", "나중");
+    }
+
+    @Test
+    @DisplayName("topTag 는 topTags(1) 의 첫 원소와 같다 — 기준이 갈리지 않는다")
+    void topTagIsFirstOfTopTags() {
+        WikiTagsResponse response = of(
+                tag("t-1", "주가변동", 0.98),
+                tag("t-2", "SK하이닉스", 1.0));
+
+        assertThat(response.topTag()).contains(response.topTags(1).get(0));
+    }
 }

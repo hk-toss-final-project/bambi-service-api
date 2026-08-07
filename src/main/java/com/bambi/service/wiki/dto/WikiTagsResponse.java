@@ -27,23 +27,42 @@ public record WikiTagsResponse(
     }
 
     /**
+     * 상위 관심사(태그)를 score 내림차순으로 최대 {@code limit} 개 돌려준다.
+     *
+     * <p>아침 브리핑이 한 리포트에 여러 주제를 묶을 때 쓴다(2026-08-07 계약: {@code topics[]}).
+     * 이름만 필요하면 {@code .stream().map(WikiTag::tag)} 로 뽑아 쓴다.
+     *
+     * <p>여기서 개수를 제한하지 않는다 — agent 는 {@code topics} 를 5개까지만 받지만, 그 상한을
+     * 이 안에서 조용히 깎으면 호출부가 6개를 넘긴 실수를 눈치채지 못한다. 몇 개를 쓸지는 호출부가 정한다.
+     *
+     * <p>동점이면 응답에 먼저 온 태그가 앞선다(정렬이 안정적이라 같은 응답이면 결과도 항상 같다).
+     * {@code limit} 이 0 이하면 빈 목록이다.
+     */
+    public List<WikiTag> topTags(int limit) {
+        if (tags == null || limit <= 0) {
+            return List.of();
+        }
+        return tags.stream()
+                .filter(t -> t.tag() != null && !t.tag().isBlank())
+                .sorted(Comparator.comparingDouble(WikiTag::score).reversed())
+                .limit(limit)
+                .toList();
+    }
+
+    /**
      * 대표 관심사(태그) 1개 — score 가 가장 높은 태그를 <b>객체째</b> 돌려준다.
      *
      * <p>이름만 필요하면 {@link #topTopic()} 을 쓰면 되지만, agent 의 {@code INTEREST_BUNDLE}
      * 생성은 이름이 아니라 <b>{@code tagId}</b>(=agent {@code interest_id})를 요구한다.
      * 두 값을 같이 써야 하는 호출부가 태그를 두 번 찾지 않도록 여기서 한 번에 준다.
      *
-     * <p>선택 기준은 {@link #topTopic()} 과 완전히 같다 — 같은 응답이면 두 메서드가 항상 같은
-     * 태그를 가리킨다. 기준을 다르게 하면(예: tagId 없는 태그 제외) 스케줄러가 고르는 주제가
-     * 조용히 바뀌므로 그렇게 하지 않는다. {@code tagId} 가 비어 올 가능성은 호출부가 다룬다.
+     * <p>선택 기준은 {@link #topTags(int)}·{@link #topTopic()} 과 완전히 같다 — 같은 응답이면
+     * 세 메서드가 항상 같은 태그(들)를 가리킨다. 기준을 따로 두면(예: tagId 없는 태그 제외)
+     * 스케줄러가 고르는 주제가 조용히 바뀌므로 그렇게 하지 않는다.
+     * {@code tagId} 가 비어 올 가능성은 호출부가 다룬다.
      */
     public Optional<WikiTag> topTag() {
-        if (tags == null) {
-            return Optional.empty();
-        }
-        return tags.stream()
-                .filter(t -> t.tag() != null && !t.tag().isBlank())
-                .max(Comparator.comparingDouble(WikiTag::score));
+        return topTags(1).stream().findFirst();
     }
 
     /**
