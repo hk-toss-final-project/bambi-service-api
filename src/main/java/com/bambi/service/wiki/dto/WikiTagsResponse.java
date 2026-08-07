@@ -27,17 +27,31 @@ public record WikiTagsResponse(
     }
 
     /**
-     * 생성 검색 주제로 쓸 대표 관심사(태그) 1개 — score 가 가장 높은 태그.
-     * 계약상 생성 요청의 topic 은 라벨이 아니라 <b>실제 검색 주제</b>라, 고정 문구 대신 이 값을 넣는다
-     * (유림 확인 08-05). 관심사가 없으면 empty → 호출부가 생성을 거절/건너뛴다.
+     * 대표 관심사(태그) 1개 — score 가 가장 높은 태그를 <b>객체째</b> 돌려준다.
+     *
+     * <p>이름만 필요하면 {@link #topTopic()} 을 쓰면 되지만, agent 의 {@code INTEREST_BUNDLE}
+     * 생성은 이름이 아니라 <b>{@code tagId}</b>(=agent {@code interest_id})를 요구한다.
+     * 두 값을 같이 써야 하는 호출부가 태그를 두 번 찾지 않도록 여기서 한 번에 준다.
+     *
+     * <p>선택 기준은 {@link #topTopic()} 과 완전히 같다 — 같은 응답이면 두 메서드가 항상 같은
+     * 태그를 가리킨다. 기준을 다르게 하면(예: tagId 없는 태그 제외) 스케줄러가 고르는 주제가
+     * 조용히 바뀌므로 그렇게 하지 않는다. {@code tagId} 가 비어 올 가능성은 호출부가 다룬다.
      */
-    public Optional<String> topTopic() {
+    public Optional<WikiTag> topTag() {
         if (tags == null) {
             return Optional.empty();
         }
         return tags.stream()
                 .filter(t -> t.tag() != null && !t.tag().isBlank())
-                .max(Comparator.comparingDouble(WikiTag::score))
-                .map(WikiTag::tag);
+                .max(Comparator.comparingDouble(WikiTag::score));
+    }
+
+    /**
+     * 생성 검색 주제로 쓸 대표 관심사(태그)의 <b>이름</b> 1개 — score 가 가장 높은 태그.
+     * 계약상 생성 요청의 topic 은 라벨이 아니라 <b>실제 검색 주제</b>라, 고정 문구 대신 이 값을 넣는다
+     * (유림 확인 08-05). 관심사가 없으면 empty → 호출부가 생성을 거절/건너뛴다.
+     */
+    public Optional<String> topTopic() {
+        return topTag().map(WikiTag::tag);
     }
 }
