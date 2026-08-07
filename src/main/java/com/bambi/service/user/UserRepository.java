@@ -3,6 +3,7 @@ package com.bambi.service.user;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -12,6 +13,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    /** 관리자 대시보드 — 살아있는(활성) 사용자 수. 전체 수는 {@code count()}. */
+    long countByDeletedAtIsNull();
+
+    /** 관리자 대시보드 — 비활성(soft delete) 사용자 수. */
+    long countByDeletedAtIsNotNull();
+
+    /** 관리자 대시보드 — 지정 시각 이후 가입 수(오늘 가입 집계). */
+    long countByCreatedAtGreaterThanEqual(OffsetDateTime from);
 
     /** 관리자 목록용 — 전체 사용자를 가입 최신순으로. */
     List<User> findAllByOrderByCreatedAtDesc();

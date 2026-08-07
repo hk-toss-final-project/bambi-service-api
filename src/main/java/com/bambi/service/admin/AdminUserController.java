@@ -1,11 +1,13 @@
 package com.bambi.service.admin;
 
+import com.bambi.service.admin.dto.AdminContextSyncResponse;
 import com.bambi.service.admin.dto.AdminUserResponse;
 import com.bambi.service.admin.dto.AdminUserStatusRequest;
 import com.bambi.service.common.response.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,5 +40,16 @@ public class AdminUserController {
     public ApiResponse<AdminUserResponse> setStatus(@PathVariable long userId,
                                                     @RequestBody AdminUserStatusRequest request) {
         return ApiResponse.ok(adminUserService.setActive(userId, request.active()));
+    }
+
+    /**
+     * agent 컨텍스트 강제 재동기화. 관심사가 agent 에 안 붙은 계정을 관리자가 즉시 복구한다.
+     *
+     * <p>body 는 없다 — 대상은 경로의 사용자이고 보낼 내용은 서버가 현재 관심사에서 만든다.
+     * agent 가 못 받으면 AGENT_UNAVAILABLE(503)로 실패가 그대로 올라간다.
+     */
+    @PostMapping("/{userId}/context-sync")
+    public ApiResponse<AdminContextSyncResponse> resyncContext(@PathVariable long userId) {
+        return ApiResponse.ok(adminUserService.resyncAgentContext(userId));
     }
 }
