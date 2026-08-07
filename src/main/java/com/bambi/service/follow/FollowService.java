@@ -4,12 +4,18 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.follow.dto.FollowResponse;
+import com.bambi.service.follow.dto.FollowUserResponse;
 import com.bambi.service.follow.dto.ProfileResponse;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -62,6 +68,11 @@ public class FollowService {
         boolean following = viewerId != null
                 && !targetId.equals(viewerId)
                 && followRepository.existsByFollowerIdAndFolloweeId(viewerId, targetId);
+        // 프로필 통계(여진 목업): 최근 공개 시각(근사)·이번 주(롤링 7일) 공개 개수.
+        OffsetDateTime lastPublishedAt = cardRepository.findLastPublishedAt(targetId);
+        long weekPublicCount = cardRepository
+                .countByUserIdAndVisibilityAndDeletedAtIsNullAndCreatedAtAfter(
+                        targetId, PUBLIC, OffsetDateTime.now().minusDays(7));
         return new ProfileResponse(
                 target.getPublicId(),
                 target.getUsername(),
@@ -71,7 +82,46 @@ public class FollowService {
                 followRepository.countByFolloweeId(targetId),
                 followRepository.countByFollowerId(targetId),
                 following,
-                cardRepository.countByUserIdAndVisibilityAndDeletedAtIsNull(targetId, PUBLIC));
+                cardRepository.countByUserIdAndVisibilityAndDeletedAtIsNull(targetId, PUBLIC),
+                lastPublishedAt,
+                weekPublicCount);
+    }
+
+    /**
+     * 팔로워 목록(이 사용자를 팔로우하는 사람들). 공개 프로필처럼 게스트 열람 허용.
+     * @param viewerId 조회자 id. 비로그인이면 null — 각 항목의 following 은 전부 false.
+     */
+    @Transactional(readOnly = true)
+    public List<FollowUserResponse> followers(Long viewerId, String targetPublicId) {
+        User target = resolveUser(targetPublicId);
+        return toUserList(viewerId, followRepository.findFollowerIds(target.getId()));
+    }
+
+    /** 팔로잉 목록(이 사용자가 팔로우하는 사람들). 게스트 열람 허용, following 은 뷰어 기준. */
+    @Transactional(readOnly = true)
+    public List<FollowUserResponse> following(Long viewerId, String targetPublicId) {
+        User target = resolveUser(targetPublicId);
+        return toUserList(viewerId, followRepository.findFolloweeIds(target.getId()));
+    }
+
+    /**
+     * id 목록 → 사용자 응답. 탈퇴 계정은 제외하고, viewer 가 각 사용자를 팔로우 중인지(following)를
+     * 1 IN 쿼리로 배치 판단한다(N+1 회피). 게스트(viewerId=null)면 following 은 전부 false(조회 없이).
+     * 정렬은 username 오름차순(결정적 순서).
+     */
+    private List<FollowUserResponse> toUserList(Long viewerId, List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> viewerFollowing = viewerId == null ? Set.of()
+                : new HashSet<>(followRepository.findFollowedAmong(viewerId, userIds));
+        return userRepository.findByIdInAndDeletedAtIsNull(userIds).stream()
+                .sorted(Comparator.comparing(u -> u.getUsername() == null ? "" : u.getUsername(),
+                        String.CASE_INSENSITIVE_ORDER))
+                .map(u -> new FollowUserResponse(
+                        u.getPublicId(), u.getUsername(), u.getDisplayName(),
+                        viewerFollowing.contains(u.getId())))
+                .toList();
     }
 
     private Long resolveUserId(String publicId) {

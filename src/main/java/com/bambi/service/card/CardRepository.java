@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +49,18 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 
     /** 공개 프로필의 공개 카드 수. */
     long countByUserIdAndVisibilityAndDeletedAtIsNull(Long userId, String visibility);
+
+    /**
+     * 프로필 "최근 공개 시각" — 가장 최근 PUBLIC 카드의 생성 시각(공개 카드 없으면 null).
+     * ⚠️ Card 에 발행-이벤트 타임스탬프가 없어 createdAt 으로 근사한다(공개 토글 시각 아님).
+     */
+    @Query("select max(c.createdAt) from Card c "
+            + "where c.userId = :userId and c.visibility = 'PUBLIC' and c.deletedAt is null")
+    OffsetDateTime findLastPublishedAt(@Param("userId") Long userId);
+
+    /** 프로필 "이번 주 공개 개수" — since(=지금-7일) 이후 생성된 PUBLIC 카드 수(롤링 7일). */
+    long countByUserIdAndVisibilityAndDeletedAtIsNullAndCreatedAtAfter(
+            Long userId, String visibility, OffsetDateTime since);
 
     /** 이 리포트를 참조하는 특정 공개설정(PUBLIC 등) 카드가 살아있나 — 리포트 본문 접근 권한 판단용. */
     boolean existsByReportIdAndVisibilityAndDeletedAtIsNull(Long reportId, String visibility);

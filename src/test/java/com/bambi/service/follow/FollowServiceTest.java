@@ -4,17 +4,21 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.follow.dto.FollowResponse;
+import com.bambi.service.follow.dto.FollowUserResponse;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -97,5 +101,69 @@ class FollowServiceTest {
         assertThat(profile.bio()).isEqualTo("매일 아침 브리핑");
         assertThat(profile.joinedAt()).isEqualTo(joined);
         assertThat(profile.following()).isFalse();   // 게스트는 팔로우 여부 조회 없이 false
+    }
+
+    @Test
+    void 프로필_통계는_최근_공개시각과_이번주_공개수를_채운다() {
+        java.time.OffsetDateTime last = java.time.OffsetDateTime.parse("2026-08-06T09:00:00+09:00");
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+        when(cardRepository.findLastPublishedAt(2L)).thenReturn(last);
+        when(cardRepository.countByUserIdAndVisibilityAndDeletedAtIsNullAndCreatedAtAfter(
+                eq(2L), eq("PUBLIC"), any())).thenReturn(3L);
+
+        var profile = service.profile(null, UUID.randomUUID().toString());
+
+        assertThat(profile.lastPublishedAt()).isEqualTo(last);
+        assertThat(profile.weekPublicCount()).isEqualTo(3L);
+    }
+
+    @Test
+    void 팔로워_목록은_username순으로_following플래그를_뷰어기준으로_채운다() {
+        UUID targetPublicId = UUID.randomUUID();
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(targetPublicId)).thenReturn(Optional.of(target));
+        when(followRepository.findFollowerIds(2L)).thenReturn(List.of(10L, 11L));
+
+        User bob = mock(User.class);       // id 11, username "bob"
+        when(bob.getId()).thenReturn(11L);
+        when(bob.getUsername()).thenReturn("bob");
+        when(bob.getPublicId()).thenReturn(UUID.randomUUID());
+        User alice = mock(User.class);     // id 10, username "alice"
+        when(alice.getId()).thenReturn(10L);
+        when(alice.getUsername()).thenReturn("alice");
+        when(alice.getPublicId()).thenReturn(UUID.randomUUID());
+        // 저장 순서와 무관하게 서비스가 username 오름차순으로 정렬해야 한다
+        when(userRepository.findByIdInAndDeletedAtIsNull(List.of(10L, 11L))).thenReturn(List.of(bob, alice));
+        // 뷰어(1L)는 alice(10L)만 팔로우 중
+        when(followRepository.findFollowedAmong(1L, List.of(10L, 11L))).thenReturn(List.of(10L));
+
+        List<FollowUserResponse> list = service.followers(1L, targetPublicId.toString());
+
+        assertThat(list).extracting(FollowUserResponse::username).containsExactly("alice", "bob");
+        assertThat(list.get(0).following()).isTrue();    // alice
+        assertThat(list.get(1).following()).isFalse();   // bob
+    }
+
+    @Test
+    void 팔로잉_목록_게스트는_following_조회없이_전부_false() {
+        UUID targetPublicId = UUID.randomUUID();
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(targetPublicId)).thenReturn(Optional.of(target));
+        when(followRepository.findFolloweeIds(2L)).thenReturn(List.of(10L));
+        User alice = mock(User.class);
+        when(alice.getId()).thenReturn(10L);
+        when(alice.getUsername()).thenReturn("alice");
+        when(alice.getPublicId()).thenReturn(UUID.randomUUID());
+        when(userRepository.findByIdInAndDeletedAtIsNull(List.of(10L))).thenReturn(List.of(alice));
+
+        List<FollowUserResponse> list = service.following(null, targetPublicId.toString());
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).following()).isFalse();
+        verify(followRepository, never()).findFollowedAmong(any(), anyCollection());
     }
 }

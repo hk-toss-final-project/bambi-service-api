@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     /** 대외 식별자(public_id)로 살아있는 사용자 조회 — SNS 팔로우/프로필 진입점. */
     Optional<User> findByPublicIdAndDeletedAtIsNull(UUID publicId);
+
+    /** 팔로워/팔로잉 목록용 — 살아있는 사용자만 배치 조회(탈퇴 계정은 목록에서 제외). */
+    List<User> findByIdInAndDeletedAtIsNull(Collection<Long> ids);
 
     /** 핸들(username) 중복 검사 — 프로필 편집에서 본인 제외. DB unique 가 최종 방어. */
     boolean existsByUsernameAndIdNot(String username, Long id);

@@ -77,6 +77,7 @@ public class SecurityConfig {
                         // 팔로잉 스코프(?following=true)는 로그인 전제라 서비스에서 401 을 던진다.
                         // `/api/reports/*` 는 게스트의 **공개 보고서 본문**(#30) 조회용이다.
                         .requestMatchers(HttpMethod.GET, "/api/feed/public", "/api/users/*/profile",
+                                "/api/users/*/followers", "/api/users/*/following",
                                 "/api/users/*/cards", "/api/cards/*", "/api/reports/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
