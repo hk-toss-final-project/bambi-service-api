@@ -47,7 +47,7 @@ public class RestClientAgentGateway implements AgentGateway {
     public void syncUserContext(long userId, AgentContextRequest request) {
         String path = internalPrefix + "/users/" + userId + "/context";
         String requestBody = toJson(request);
-        Long reqLogId = callLogger.logRequest(userId, path, requestBody);
+        Long reqLogId = safeLogRequest(userId, path, requestBody);
         long startNanos = System.nanoTime();
 
         try {
@@ -58,13 +58,13 @@ public class RestClientAgentGateway implements AgentGateway {
                     .body(requestBody != null ? requestBody : request)   // 로그용 JSON 재사용(이중 직렬화 회피)
                     .retrieve()
                     .toEntity(String.class);
-            callLogger.logResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
+            safeLogResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
 
         } catch (RestClientResponseException e) {
             // agent 가 응답은 줬으나 4xx/5xx
             int status = e.getStatusCode().value();
             String body = e.getResponseBodyAsString();
-            callLogger.logResponse(reqLogId, status, elapsedMs(startNanos), body);
+            safeLogResponse(reqLogId, status, elapsedMs(startNanos), body);
 
             // STALE_CONTEXT_VERSION: service 로컬 카운터가 agent 실제 버전보다 낮아 거절됨.
             // agent 가 현재 버전(current_context_version)을 실어주면 그 값으로 재전송하도록 신호를 던진다.
@@ -82,7 +82,7 @@ public class RestClientAgentGateway implements AgentGateway {
 
         } catch (RestClientException e) {
             // 연결 실패/타임아웃 등 (응답 자체가 없음)
-            callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
+            safeLogResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw AgentErrors.connectFailed(e);
         }
     }
@@ -91,7 +91,7 @@ public class RestClientAgentGateway implements AgentGateway {
     public void syncInterestTaxonomy(AgentInterestTaxonomyRequest request) {
         String path = internalPrefix + "/interest-taxonomies/" + request.version();
         String requestBody = toJson(request);
-        Long reqLogId = callLogger.logRequest(null, path, requestBody);
+        Long reqLogId = safeLogRequest(null, path, requestBody);
         long startNanos = System.nanoTime();
         try {
             ResponseEntity<String> resp = restClient.put()
@@ -101,17 +101,17 @@ public class RestClientAgentGateway implements AgentGateway {
                     .body(requestBody != null ? requestBody : request)
                     .retrieve()
                     .toEntity(String.class);
-            callLogger.logResponse(
+            safeLogResponse(
                     reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
         } catch (RestClientResponseException e) {
-            callLogger.logResponse(
+            safeLogResponse(
                     reqLogId,
                     e.getStatusCode().value(),
                     elapsedMs(startNanos),
                     e.getResponseBodyAsString());
             throw AgentErrors.unavailable(e, "agent 관심사 taxonomy 동기화 실패");
         } catch (RestClientException e) {
-            callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
+            safeLogResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw AgentErrors.connectFailed(e);
         }
     }
@@ -133,7 +133,7 @@ public class RestClientAgentGateway implements AgentGateway {
     private void postWikiSource(long userId, String pathSuffix, Object request, String failMessage) {
         String path = internalPrefix + "/users/" + userId + pathSuffix;
         String requestBody = toJson(request);
-        Long reqLogId = callLogger.logRequest(userId, path, requestBody);
+        Long reqLogId = safeLogRequest(userId, path, requestBody);
         long startNanos = System.nanoTime();
 
         try {
@@ -145,14 +145,14 @@ public class RestClientAgentGateway implements AgentGateway {
                     .retrieve()
                     .toEntity(String.class);
             // 202 Accepted 가 정상 — Job 접수만 확인한다(결과는 service-worker Pull).
-            callLogger.logResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
+            safeLogResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
 
         } catch (RestClientResponseException e) {
-            callLogger.logResponse(reqLogId, e.getStatusCode().value(), elapsedMs(startNanos), e.getResponseBodyAsString());
+            safeLogResponse(reqLogId, e.getStatusCode().value(), elapsedMs(startNanos), e.getResponseBodyAsString());
             throw AgentErrors.unavailable(e, failMessage);
 
         } catch (RestClientException e) {
-            callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
+            safeLogResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw AgentErrors.connectFailed(e);
         }
     }
@@ -173,6 +173,37 @@ public class RestClientAgentGateway implements AgentGateway {
     }
 
     /** 로그 적재용 요청 본문 직렬화. 실패해도 호출은 계속하고 본문만 비운다. */
+    /**
+     * 로그 적재는 <b>호출 결과를 절대 바꾸지 않는다.</b>
+     *
+     * <p>로그 저장이 실패하면 그 예외가 원래 던지려던 agent 오류를 덮어써서,
+     * {@code AGENT_UNAVAILABLE} 이 나가야 할 자리에 {@code INTERNAL_ERROR} 500 이 나간다
+     * (2026-08-08 여진 발견 — agent 장애를 service 버그로 오진하게 된다).
+     * 원인인 본문 형식은 {@code AgentCallLogger} 에서 막았지만, <b>관측용 코드가 비즈니스 결과를
+     * 바꿀 수 있는 구조 자체</b>를 여기서 끊는다. 로그가 못 남는 건 감수해도 호출 결과가
+     * 뒤바뀌면 안 된다.
+     *
+     * <p>⚠️ {@code REQUIRES_NEW} 라 실제 INSERT 는 프록시가 커밋할 때 일어난다 — 그 예외는
+     * <b>프록시 호출을 감싼 여기서만</b> 잡힌다. {@code logResponse} 안에서 try/catch 해도 못 잡는다.
+     */
+    private void safeLogResponse(Long requestId, Integer statusCode, Integer latencyMs, String responseBody) {
+        try {
+            callLogger.logResponse(requestId, statusCode, latencyMs, responseBody);
+        } catch (RuntimeException e) {
+            log.warn("[AgentGateway] 응답 로그 적재 실패 — 호출 결과에는 영향 없음(requestId={})", requestId, e);
+        }
+    }
+
+    /** 요청 로그 적재 실패도 호출을 막지 않는다. id 가 null 이면 응답 로그는 알아서 건너뛴다. */
+    private Long safeLogRequest(Long userId, String endpoint, String requestBody) {
+        try {
+            return callLogger.logRequest(userId, endpoint, requestBody);
+        } catch (RuntimeException e) {
+            log.warn("[AgentGateway] 요청 로그 적재 실패 — 호출은 계속한다(endpoint={})", endpoint, e);
+            return null;
+        }
+    }
+
     private String toJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
