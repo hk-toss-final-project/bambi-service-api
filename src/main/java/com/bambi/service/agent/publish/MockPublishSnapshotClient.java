@@ -53,7 +53,9 @@ public class MockPublishSnapshotClient implements PublishSnapshotClient, MockPub
                 List.of("Mock 관심사"),          // tags(topic 에코) — 실제 agent 는 generation_requests.topic
                 List.of("Mock 콘텐츠태그"),       // content_tags — 리포트 내용 기반(카드 노출용)
                 null,                           // report_type — 소라 게이트웨이 롤아웃 전 상태 재현(null 관용)
-                "");                            // Mock 저장 경로는 생성 pending과 연결되지 않음
+                "",                             // Mock 저장 경로는 생성 pending과 연결되지 않음
+                null,                           // generation_topic — 근사 매칭 대상이 아님
+                null);                          // created_at — 없으면 근사 매칭을 아예 시도하지 않는다
         ready.add(item);
         log.info("[MockPublish] enqueue contentId={}, userId={}", contentId, userId);
     }

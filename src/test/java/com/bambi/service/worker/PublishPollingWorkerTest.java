@@ -30,7 +30,7 @@ class PublishPollingWorkerTest {
 
     private void claimReturnsOneItem() {
         PublishItem item = new PublishItem("c1", "mock-user-001", 1, "hash-1",
-                "제목", "요약", "본문", List.of(), List.of(), List.of(), null, null);
+                "제목", "요약", "본문", List.of(), List.of(), List.of(), null, null, null, null);
         when(client.claim(any())).thenReturn(
                 new ClaimResponse("batch-1", OffsetDateTime.parse("2026-07-30T00:00:00Z"), List.of(item)));
     }

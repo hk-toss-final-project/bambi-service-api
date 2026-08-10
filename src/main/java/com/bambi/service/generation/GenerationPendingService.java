@@ -1,6 +1,7 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.agent.jobs.AgentJobStatus;
+import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.generation.dto.GenerationPendingResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,10 +110,67 @@ public class GenerationPendingService {
 
     /** Publish Snapshot 반영과 같은 트랜잭션에서 생성 작업을 완료한다. */
     public void markCompleted(long userId, String idempotencyKey) {
+        markCompleted(userId, idempotencyKey, null);
+    }
+
+    /** 완료 처리 + 완성 카드 연결. 카드 식별자를 모르면 {@code cardPublicId} 는 null 이어도 된다. */
+    public void markCompleted(long userId, String idempotencyKey, UUID cardPublicId) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return;
         }
-        pendingRepository.markCompleted(userId, idempotencyKey);
+        int closed = pendingRepository.markCompleted(userId, idempotencyKey, cardPublicId);
+        if (closed == 0 && cardPublicId != null) {
+            // 이미 COMPLETED 였던 행(재발행 등)에도 카드 링크는 채워 준다.
+            pendingRepository.linkCard(userId, idempotencyKey, cardPublicId);
+        }
+    }
+
+    /**
+     * 발행된 Snapshot 하나로 해당 생성 작업을 닫는다 — <b>정공법 우선, 구 Snapshot 만 근사 매칭.</b>
+     *
+     * <p>연결 키({@code request_idempotency_key})가 실려 오면 그것으로 정확히 닫는다(2026-08-10
+     * 김기용 반영). <b>2026-08-10 이전에 이미 생성돼 저장된 Snapshot 은 이 값이 빈 문자열</b>이고
+     * 소급되지 않아, 그 구간만 근사 매칭으로 덮는다.
+     *
+     * <p><b>매칭되는 접수가 없는 것은 오류가 아니다.</b> agent 자체 생성 경로(온보딩 첫 리포트,
+     * 관심사 리포트 등)의 카드에는 agent 내부 멱등키가 실려 오는데, service 가 보낸 요청이
+     * 아니므로 이을 펜딩이 애초에 없다(김기용 확인). 조용히 넘어간다.
+     *
+     * @param newCard 신규 카드 발행인가. 근사 매칭은 <b>신규에만</b> 건다 — 기존 카드의 v2 재발행이
+     *                나중에 접수된 다른 펜딩을 잘못 닫는 것을 막는다(우석 가드 2).
+     */
+    public void completeFromSnapshot(long userId, PublishItem item, UUID cardPublicId, boolean newCard) {
+        if (item.hasRequestIdempotencyKey()) {
+            markCompleted(userId, item.requestIdempotencyKey(), cardPublicId);
+            return;
+        }
+        if (!newCard) {
+            return;
+        }
+        completeByApproximateMatch(userId, item, cardPublicId);
+    }
+
+    /**
+     * 연결 키가 없던 구 Snapshot 용 폴백. 정확도 한계를 알고 쓴다 — 같은 조건에 열린 접수가
+     * 둘 이상이면(같은 주제 온디맨드 연타, delta 토글 등) <b>카드-펜딩 짝이 뒤바뀔 수 있다.</b>
+     * 다만 둘 다 결국 닫히므로 "처리중"이 화면에 남지는 않는다.
+     */
+    private void completeByApproximateMatch(long userId, PublishItem item, UUID cardPublicId) {
+        String reportType = item.normalizedReportType();
+        if (reportType == null || item.createdAt() == null) {
+            // 유형이나 발행 시각을 모르면 어느 접수인지 좁힐 수 없다 — 잘못 닫느니 열어 둔다.
+            return;
+        }
+        // 아침 브리핑은 요청 topic 이 고정 문구("오늘의 관심사 브리핑")라 펜딩의 topic(topics[0])과
+        // 다르다. 대신 멱등키가 {날짜}-{userId}-{contentType} 라 그날 1건뿐이라 주제를 안 봐도 유일하다.
+        String topic = REPORT_TYPE_MORNING_BRIEFING.equals(reportType) ? null : item.generationTopic();
+        pendingRepository.findApproximateMatch(userId, reportType, topic, item.createdAt())
+                .ifPresent(pending -> {
+                    pendingRepository.markCompletedById(pending.getId(), cardPublicId);
+                    log.info("[GenerationPending] 연결 키 없는 구 Snapshot — 근사 매칭으로 완료 "
+                                    + "(userId={}, reportType={}, topic={}, pendingId={})",
+                            userId, reportType, topic, pending.getId());
+                });
     }
 
     /**

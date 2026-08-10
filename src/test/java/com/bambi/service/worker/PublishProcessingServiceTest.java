@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,7 +42,7 @@ class PublishProcessingServiceTest {
         // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"), null, null, null);
+                List.of("코스피"), null, null, null, null, null);
     }
 
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
@@ -87,7 +88,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null);
+                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null, null, null);
 
         service.upsert(item);
 
@@ -129,7 +130,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null);
+                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null, null, null);
 
         service.upsert(item);
 
@@ -235,11 +236,30 @@ class PublishProcessingServiceTest {
                 .thenReturn(Optional.of(existingCard));
         PublishItem published = new PublishItem(
                 "c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1");
+                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null);
 
         service.upsert(published);
 
-        verify(pendingService).markCompleted(1L, "generation-key-1");
+        // 신규 카드가 아니므로 newCard=false — 연결 키가 있을 때만 닫힌다(근사 매칭 금지, 우석 가드 2).
+        verify(pendingService).completeFromSnapshot(
+                eq(1L), eq(published), eq(existingCard.getPublicId()), eq(false));
+    }
+
+    @Test
+    void 신규_발행이면_완성_카드를_함께_넘긴다() {
+        // 프론트가 "처리중" 슬롯을 완성 카드로 바꿔 끼우려면 어느 카드가 됐는지가 필요하다.
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        PublishItem published = new PublishItem(
+                "c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null);
+
+        service.upsert(published);
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        verify(pendingService).completeFromSnapshot(
+                eq(1L), eq(published), eq(cardCaptor.getValue().getPublicId()), eq(true));
     }
 
     @Test

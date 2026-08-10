@@ -63,7 +63,9 @@ public class PublishProcessingService {
         if (existingCard.isPresent() && !isNewer(item.version(), existingCard.get().getExternalVersion())) {
             log.info("[PublishWorker] 이미 최신 skip contentId={} (수신 v{}, 저장 v{})",
                     item.contentId(), item.version(), existingCard.get().getExternalVersion());
-            pendingService.markCompleted(userId, item.requestIdempotencyKey());
+            // 신규 카드가 아니므로 근사 매칭은 걸지 않는다 — 연결 키가 있을 때만 닫힌다(우석 가드 2).
+            pendingService.completeFromSnapshot(
+                    userId, item, existingCard.get().getPublicId(), false);
             return true;
         }
 
@@ -114,7 +116,9 @@ public class PublishProcessingService {
         }
         log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
                 isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
-        pendingService.markCompleted(userId, item.requestIdempotencyKey());
+        // 연결 키가 있으면 신규·갱신 모두 그것으로 정확히 닫는다. 키 없는 구 Snapshot 은
+        // 신규 발행일 때만 근사 매칭한다 — 재발행이 나중에 접수된 펜딩을 오완료하지 않게(우석 가드 2).
+        pendingService.completeFromSnapshot(userId, item, card.getPublicId(), isNew);
         return true;   // 갱신은 dirty checking, 신규는 save 로 flush
     }
 

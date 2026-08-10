@@ -109,6 +109,6 @@ class GenerationPendingServiceTest {
     void publishMarksPendingCompleted() {
         service.markCompleted(28L, "generation-key-1");
 
-        verify(repository).markCompleted(28L, "generation-key-1");
+        verify(repository).markCompleted(28L, "generation-key-1", null);
     }
 }

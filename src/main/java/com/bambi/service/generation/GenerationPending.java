@@ -65,6 +65,10 @@ public class GenerationPending {
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
 
+    // 이 접수가 만들어낸 카드의 public_id. 완료 전엔 null, 근사 매칭이 실패한 구 Snapshot 도 null.
+    @Column(name = "card_public_id")
+    private UUID cardPublicId;
+
     protected GenerationPending() {
     }
 
@@ -110,5 +114,9 @@ public class GenerationPending {
 
     public String getErrorCode() {
         return errorCode;
+    }
+
+    public UUID getCardPublicId() {
+        return cardPublicId;
     }
 }

@@ -2,6 +2,7 @@ package com.bambi.service.agent.publish.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -38,7 +39,17 @@ public record PublishItem(
         @JsonProperty("tags") List<String> tags,
         @JsonProperty("content_tags") List<String> contentTags,
         @JsonProperty("report_type") String reportType,
-        @JsonProperty("request_idempotency_key") String requestIdempotencyKey) {
+        @JsonProperty("request_idempotency_key") String requestIdempotencyKey,
+        @JsonProperty("generation_topic") String generationTopic,
+        @JsonProperty("created_at") OffsetDateTime createdAt) {
+
+    /**
+     * 연결 키가 실려 왔는가. 2026-08-10 이전에 이미 생성돼 저장된 Snapshot 은 이 값이
+     * <b>빈 문자열</b>이다(소급 안 됨, 김기용 확인). 그 구간만 근사 매칭으로 커버한다.
+     */
+    public boolean hasRequestIdempotencyKey() {
+        return requestIdempotencyKey != null && !requestIdempotencyKey.isBlank();
+    }
 
     /**
      * 카드에 저장·노출할 관심사 태그. 리포트 내용 기반 {@code content_tags} 를 우선하고,
