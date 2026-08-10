@@ -12,7 +12,8 @@ import jakarta.validation.constraints.Size;
  */
 public record GenerationTriggerRequest(
         @Size(max = 100) String topic,
-        Boolean changeHistoryEnabled) {
+        Boolean changeHistoryEnabled,
+        @Size(max = 64) String interestTagId) {
 
     /** 정규화된 topic — 앞뒤 공백 제거, 비어 있으면 null(대표 관심사 자동 선택 신호). */
     public String normalizedTopic() {
@@ -28,5 +29,21 @@ public record GenerationTriggerRequest(
      */
     public boolean wantsChangeHistory() {
         return Boolean.TRUE.equals(changeHistoryEnabled);
+    }
+
+    /**
+     * 관심사 깊게 파기(범주 리포트) 요청 여부 (2026-08-10 우석·기용). {@code interestTagId} =
+     * {@code GET /api/wiki/tags} 의 {@code tagId}. 생략하면 기존 온디맨드 경로 그대로다.
+     *
+     * <p>topic·Delta 와 조합 규칙은 컨트롤러가 검증한다 — 깊게 파기는 루트를 agent 가 정하므로
+     * topic 과 배타이고, Delta 조합은 계약에 정의가 없어 거절한다.
+     */
+    public boolean wantsDeepDive() {
+        return interestTagId != null && !interestTagId.isBlank();
+    }
+
+    /** 정규화된 태그 ID — 앞뒤 공백 제거. {@link #wantsDeepDive()} 가 true 일 때만 의미 있다. */
+    public String normalizedInterestTagId() {
+        return interestTagId == null ? null : interestTagId.strip();
     }
 }

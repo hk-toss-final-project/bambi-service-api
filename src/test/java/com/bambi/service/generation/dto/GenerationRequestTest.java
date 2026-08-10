@@ -30,6 +30,39 @@ class GenerationRequestTest {
         assertThat(json).contains("\"topic\":\"폭염\"");
     }
 
+    // ---------- 관심사 깊게 파기(INTEREST_BUNDLE) — 2026-08-10 우석·기용 ----------
+
+    @Test
+    void 깊게_파기는_scope_와_interest_id_만_싣고_topic_topics_를_생략한다() throws Exception {
+        GenerationRequest request = GenerationRequest.interestBundle(
+                "key-b", "interest_news_card", "ON_DEMAND",
+                "3f2c9a10-1111-2222-3333-444455556666");
+
+        String json = mapper.writeValueAsString(request);
+
+        assertThat(json).contains("\"generation_scope\":\"INTEREST_BUNDLE\"");
+        assertThat(json).contains("\"interest_id\":\"3f2c9a10-1111-2222-3333-444455556666\"");
+        // topic 을 실으면 라벨이 검색어로 오해되고, topics 동시 전송은 agent 가 422 로 거부한다.
+        assertThat(json).doesNotContain("\"topic\"");
+        assertThat(json).doesNotContain("\"topics\"");
+        // Delta 조합은 계약 미정의 — 싣지 않는다.
+        assertThat(json).doesNotContain("change_history_enabled");
+        // report_type 은 새 값을 만들지 않는다(계약 #20) — ON_DEMAND 그대로.
+        assertThat(json).contains("\"report_type\":\"ON_DEMAND\"");
+    }
+
+    @Test
+    void 기존_팩토리들은_scope_필드를_전혀_싣지_않는다() throws Exception {
+        // 새 필드가 기존 요청 본문에 새어 들어가면 agent 검증·동작이 바뀔 수 있다(회귀 방지).
+        String single = mapper.writeValueAsString(GenerationRequest.singleTopic(
+                "key-1", "폭염", "interest_news_card", "ON_DEMAND"));
+        String multi = mapper.writeValueAsString(GenerationRequest.multiTopic(
+                "key-2", "오늘의 관심사 브리핑", List.of("폭염"), "interest_news_card", "MORNING_BRIEFING"));
+
+        assertThat(single).doesNotContain("generation_scope").doesNotContain("interest_id");
+        assertThat(multi).doesNotContain("generation_scope").doesNotContain("interest_id");
+    }
+
     // ---------- 변경점(Delta) 추적 — agent-api #12 김기용 ----------
 
     @Test

@@ -195,6 +195,44 @@ class OnDemandGenerationServiceTest {
         verify(interestService, never()).existsByName(any(Long.class), any());
     }
 
+    // ---------- 관심사 깊게 파기(INTEREST_BUNDLE) — 2026-08-10 우석·기용 ----------
+
+    @Test
+    @DisplayName("깊게 파기는 scope=INTEREST_BUNDLE + tagId 로 접수하고 펜딩 제목은 태그 이름이다")
+    void deepDiveSendsBundleAndRegistersPending() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스", "삼성전자"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-b1");
+
+        GenerationTriggerResponse response = service.generateBundleForUser(28L, "id-삼성전자");
+
+        assertThat(response.status()).isEqualTo("accepted");
+        GenerationRequest sent = capture();
+        assertThat(sent.generationScope()).isEqualTo(GenerationRequest.SCOPE_INTEREST_BUNDLE);
+        assertThat(sent.interestId()).isEqualTo("id-삼성전자");
+        assertThat(sent.topic()).isNull();                       // 루트는 agent 가 관심사에서 정한다
+        assertThat(sent.idempotencyKey()).endsWith("-bundle");   // 일반/Delta 와 같은 분에도 안 섞임
+        assertThat(sent.reportType()).isEqualTo(GenerationPendingService.REPORT_TYPE_ON_DEMAND);
+        // 펜딩 슬롯 제목 = 루트 태그 이름 (무엇을 파는 중인지 보이게)
+        verify(pendingRepository).insertPending(
+                eq(java.util.UUID.fromString(response.id())), eq(28L), any(),
+                eq(GenerationPendingService.REPORT_TYPE_ON_DEMAND),
+                eq("삼성전자"), eq("interest_news_card"), eq("job-b1"));
+    }
+
+    @Test
+    @DisplayName("내 위키 관심사에 없는 tagId 는 INTEREST_NOT_FOUND(404) 로 거절한다")
+    void deepDiveUnknownTagRejected() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+
+        assertThatThrownBy(() -> service.generateBundleForUser(28L, "id-없는태그"))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INTEREST_NOT_FOUND);
+
+        verify(generationClient, never()).requestGeneration(any(Long.class), any());
+        verify(pendingRepository, never()).insertPending(any(), any(), any(), any(), any(), any(), any());
+    }
+
     // ---------- 변경점(Delta) 추적 — agent-api #12 김기용 ----------
 
     private GenerationRequest capture() {
