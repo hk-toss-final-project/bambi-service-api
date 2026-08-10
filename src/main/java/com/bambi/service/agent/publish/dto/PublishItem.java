@@ -24,6 +24,14 @@ import java.util.List;
  * <p>{@code report_type} — 생성 유형(MORNING_BRIEFING|ON_DEMAND, 2026-08-06 합의).
  * 소라(agent 게이트웨이)가 단계적으로 추가하는 필드라 아직 안 오는 스냅샷이 대부분이다 —
  * 없으면 null 로 관용 파싱한다({@link #normalizedReportType()}). 발행 처리를 절대 깨지 않는다.
+ *
+ * <p>{@code request_idempotency_key} — 생성 요청의 멱등키를 agent 가 원문 그대로 돌려준다
+ * (2026-08-06 합의, agent 2026-08-10 반영). service 가 접수 때 만든
+ * {@code generation_pendings.idempotency_key} 와 <b>정확히 같은 문자열</b>이라
+ * "처리중" 펜딩과 도착한 카드를 짐작 없이 1:1 로 잇는다. 이 필드가 없던 동안에는
+ * topic·날짜·report_type 근사 매칭을 검토했는데, 같은 주제의 열린 펜딩이 둘이면 교차하는
+ * 한계가 있었다. 정확 매칭이 가능해져 그 방식은 채택하지 않는다.
+ * 미도착 스냅샷은 빈 문자열/null 로 오므로 {@link #normalizedRequestIdempotencyKey()} 로 관용 처리한다.
  */
 public record PublishItem(
         @JsonProperty("content_id") String contentId,
@@ -36,7 +44,8 @@ public record PublishItem(
         @JsonProperty("citations") List<Citation> citations,
         @JsonProperty("tags") List<String> tags,
         @JsonProperty("content_tags") List<String> contentTags,
-        @JsonProperty("report_type") String reportType) {
+        @JsonProperty("report_type") String reportType,
+        @JsonProperty("request_idempotency_key") String requestIdempotencyKey) {
 
     /**
      * 카드에 저장·노출할 관심사 태그. 리포트 내용 기반 {@code content_tags} 를 우선하고,
@@ -60,6 +69,18 @@ public record PublishItem(
         }
         String value = reportType.strip();
         return value.length() > 30 ? null : value;
+    }
+
+    /**
+     * 접수 펜딩과 이을 생성 요청 멱등키. agent 스키마 기본값이 빈 문자열이라
+     * 미도착과 "빈 값"을 구분하지 않고 둘 다 null 로 다룬다 — 이으려면 값이 있어야 하고,
+     * 없으면 그냥 안 잇는다(발행 자체는 영향 없음).
+     */
+    public String normalizedRequestIdempotencyKey() {
+        if (requestIdempotencyKey == null || requestIdempotencyKey.isBlank()) {
+            return null;
+        }
+        return requestIdempotencyKey.strip();
     }
 
     /**

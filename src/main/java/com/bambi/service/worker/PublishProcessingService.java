@@ -3,6 +3,7 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.generation.GenerationPendingService;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
@@ -35,16 +36,19 @@ public class PublishProcessingService {
     private final ReportRepository reportRepository;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
+    private final GenerationPendingService pendingService;
 
     public PublishProcessingService(
             CardRepository cardRepository,
             ReportRepository reportRepository,
             NotificationService notificationService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            GenerationPendingService pendingService) {
         this.cardRepository = cardRepository;
         this.reportRepository = reportRepository;
         this.notificationService = notificationService;
         this.userRepository = userRepository;
+        this.pendingService = pendingService;
     }
 
     /**
@@ -92,6 +96,11 @@ public class PublishProcessingService {
                 log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
                 return true;
             }
+            // "처리중" 펜딩을 완료로 전환한다. 신규 발행에만 건다 —
+            // 기존 카드의 v2 재발행이 새로 접수된 다른 펜딩을 잘못 완료시키면 안 되기 때문이다.
+            // agent 가 요청 멱등키를 원문 에코하므로 짐작 없이 1:1 로 잇는다(키 없으면 그냥 안 잇는다).
+            pendingService.completeByIdempotencyKey(userId, item.normalizedRequestIdempotencyKey());
+
             // REPORT_READY 알림: 사용자가 수신 OFF 면 알림을 "만들지 않는다"(만들고 숨기는 게 아님).
             if (user == null || user.isReportReadyNotification()) {
                 notificationService.notifyReportReady(

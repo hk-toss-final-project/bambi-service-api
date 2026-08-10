@@ -58,6 +58,34 @@ public class GenerationPendingService {
         return id.toString();
     }
 
+    /**
+     * 발행 도착 → 그 요청의 접수 펜딩을 완료로 전환한다(2026-08-10, agent 가
+     * {@code request_idempotency_key} 를 스냅샷에 에코하면서 가능해졌다).
+     *
+     * <p>키가 없으면(구 스냅샷·빈 값) 아무것도 하지 않는다 — 그 펜딩은 종전처럼
+     * {@link #VISIBLE_WINDOW} 가 지나 목록에서 빠진다.
+     *
+     * <p><b>실패를 삼킨다.</b> 이 전환은 "처리중 표시를 지우는" 부가 작업이라,
+     * 실패해도 이미 저장된 카드·리포트를 되돌리면 안 된다(접수 기록과 같은 정책).
+     */
+    public void completeByIdempotencyKey(long userId, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return;
+        }
+        try {
+            int updated = pendingRepository.markCompleted(userId, idempotencyKey.strip());
+            if (updated > 0) {
+                log.info("[GenerationPending] 완료 전환 userId={}, key={}", userId, idempotencyKey);
+            } else {
+                // 정상 경로다 — 온보딩 리포트처럼 service 접수를 안 거친 생성이거나, 재-claim 두 번째.
+                log.debug("[GenerationPending] 전환 대상 없음 userId={}, key={}", userId, idempotencyKey);
+            }
+        } catch (Exception e) {
+            log.warn("[GenerationPending] 완료 전환 실패 (userId={}, key={}) — 발행은 유지",
+                    userId, idempotencyKey, e);
+        }
+    }
+
     /** 본인 최근 60분 PENDING 목록 — 홈 "처리중" 슬롯용. */
     @Transactional(readOnly = true)
     public List<GenerationPendingResponse> listRecent(long userId) {

@@ -41,4 +41,26 @@ public interface GenerationPendingRepository extends JpaRepository<GenerationPen
     /** 본인 것만, 지정 시각 이후 접수된 PENDING 을 최신순으로 — 처리중 슬롯 노출용. */
     List<GenerationPending> findByUserIdAndStatusAndCreatedAtAfterOrderByCreatedAtDesc(
             Long userId, String status, OffsetDateTime after);
+
+    /**
+     * 발행 도착 → 해당 접수를 완료로 전환한다. {@code status = 'PENDING'} 조건이 곧 멱등장치다 —
+     * 재-claim 으로 같은 스냅샷이 두 번 와도 두 번째는 0행이라 아무 일도 하지 않는다.
+     *
+     * <p>발행 트랜잭션과 분리한다(REQUIRES_NEW). 펜딩 전환이 실패해도 카드·리포트 저장을
+     * 되돌리면 안 되기 때문이다 — 접수 기록({@link #insertPending})과 같은 정책이다.
+     *
+     * @return 전환된 행 수(0 = 해당 펜딩 없음 또는 이미 완료)
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Modifying
+    @Query(value = """
+            UPDATE service.generation_pendings
+            SET status = 'COMPLETED', updated_at = now()
+            WHERE user_id = :userId
+              AND idempotency_key = :idempotencyKey
+              AND status = 'PENDING'
+            """, nativeQuery = true)
+    int markCompleted(
+            @Param("userId") Long userId,
+            @Param("idempotencyKey") String idempotencyKey);
 }

@@ -52,7 +52,8 @@ public class MockPublishSnapshotClient implements PublishSnapshotClient, MockPub
                 List.of(new PublishItem.Citation(sourceTitle, sourceUrl)),
                 List.of("Mock 관심사"),          // tags(topic 에코) — 실제 agent 는 generation_requests.topic
                 List.of("Mock 콘텐츠태그"),       // content_tags — 리포트 내용 기반(카드 노출용)
-                null);                          // report_type — 소라 게이트웨이 롤아웃 전 상태 재현(null 관용)
+                null,                           // report_type — 소라 게이트웨이 롤아웃 전 상태 재현(null 관용)
+                null);                          // request_idempotency_key — Mock 은 service 접수를 안 거치므로 없음
         ready.add(item);
         log.info("[MockPublish] enqueue contentId={}, userId={}", contentId, userId);
     }

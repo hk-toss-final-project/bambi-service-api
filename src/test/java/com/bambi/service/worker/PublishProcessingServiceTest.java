@@ -3,6 +3,7 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.generation.GenerationPendingService;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
@@ -31,14 +32,15 @@ class PublishProcessingServiceTest {
     private final ReportRepository reportRepository = mock(ReportRepository.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
-    private final PublishProcessingService service =
-            new PublishProcessingService(cardRepository, reportRepository, notificationService, userRepository);
+    private final GenerationPendingService pendingService = mock(GenerationPendingService.class);
+    private final PublishProcessingService service = new PublishProcessingService(
+            cardRepository, reportRepository, notificationService, userRepository, pendingService);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
-        // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
+        // content_tags·report_type·request_idempotency_key 미도착(단계적 롤아웃 전) 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"), null, null);
+                List.of("코스피"), null, null, null);
     }
 
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
@@ -84,7 +86,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), "ON_DEMAND");
+                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null);
 
         service.upsert(item);
 
@@ -126,7 +128,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null);
+                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null);
 
         service.upsert(item);
 
@@ -210,6 +212,51 @@ class PublishProcessingServiceTest {
 
         assertThat(existing.getVisibility()).isEqualTo("PUBLIC");   // 갱신은 공개범위 안 건드림
         verify(userRepository, never()).findById(any());           // 갱신 경로는 설정 조회조차 안 함
+    }
+
+    // ── 접수 펜딩 완료 전환 (2026-08-10, agent request_idempotency_key 에코) ──
+
+    /** 멱등키가 실린 스냅샷을 만든다. */
+    private static PublishItem itemWithKey(String contentId, int version, String requestIdempotencyKey) {
+        return new PublishItem(contentId, "1", version, "hash-" + version, "제목", "요약", "본문",
+                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", requestIdempotencyKey);
+    }
+
+    @Test
+    void 신규_발행이면_요청_멱등키로_접수_펜딩을_완료_전환한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.upsert(itemWithKey("c1", 1, "ondemand-1-interest_news_card-1754800000"));
+
+        verify(pendingService).completeByIdempotencyKey(1L, "ondemand-1-interest_news_card-1754800000");
+        verify(cardRepository).save(any(Card.class));
+    }
+
+    @Test
+    void 멱등키가_없거나_빈값이면_전환을_시도하지_않는다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // agent 스키마 기본값이 빈 문자열이라 "미도착"과 "빈 값"을 같게 다룬다 → null 로 전달
+        service.upsert(itemWithKey("c1", 1, "   "));
+
+        verify(pendingService).completeByIdempotencyKey(1L, null);
+    }
+
+    @Test
+    void 기존_카드_갱신은_펜딩을_전환하지_않는다() {
+        // v2 재발행이 그 사이 새로 접수된 다른 펜딩을 잘못 완료시키면 안 된다
+        Card existingCard = Card.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", null);
+        Report existingReport = Report.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", "옛 본문");
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingCard));
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
+
+        service.upsert(itemWithKey("c1", 2, "ondemand-1-interest_news_card-1754800000"));
+
+        verify(pendingService, never()).completeByIdempotencyKey(any(Long.class), any());
     }
 
     @Test
