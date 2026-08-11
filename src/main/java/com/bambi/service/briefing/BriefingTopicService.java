@@ -88,8 +88,13 @@ public class BriefingTopicService {
      *
      * <p>선정 근거({@code reason})를 로그에 남긴다. 결과만 봐서는 왜 그 주제가 뽑혔는지 알 수 없어서,
      * "아침에 이상한 주제가 나갔다"는 신고가 들어왔을 때 이 줄이 유일한 단서다.
+     *
+     * <p><b>공개인 이유</b> — {@link BriefingTopicPrefetchScheduler} 가 새벽에 이 단계만 미리 부른다
+     * (2026-08-11 유림 요청). 예열은 <b>agent 선정</b>을 앞당기는 것이라 폴백까지 포함한
+     * {@link #resolveForMorningBriefing} 이 아니라 1단계 단독이어야 한다 — 폴백 결과(등록 관심사)는
+     * agent 에 전달되지 않아 미리 불러 봐야 수집이 걸리지 않는다.
      */
-    private List<String> selectFromWikiContext(Long userId) {
+    public List<String> selectFromWikiContext(Long userId) {
         BriefingTopicsSelection selection;
         try {
             selection = wikiClient.getBriefingTopics(userId, MAX_TOPICS);
