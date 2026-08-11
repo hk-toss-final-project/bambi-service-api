@@ -56,15 +56,36 @@ public record CardResponse(
 
     /** 리포트 없는(또는 참조 불필요한) 카드 — reportId=null. 소셜 필드 null(목록·저장 응답용). */
     public static CardResponse from(Card card) {
-        return from(card, null);
+        // 캐스팅은 from(Card, Report) 오버로드와의 모호성 해소용이다(null 리터럴은 둘 다 맞는다).
+        return from(card, (UUID) null);
+    }
+
+    /**
+     * 목록용 — 리포트를 통째로 받아 publicId 와 <b>대표 이미지</b>를 함께 채운다. 소셜 필드는 null.
+     *
+     * <p>리포트가 없는(즉시) 카드는 {@code report=null} 이고 둘 다 null 이 된다.
+     *
+     * <p><b>N+1 이 아니다</b> — 호출부({@code FeedService.myFeed})가 이미 리포트를 한 번의
+     * IN 쿼리로 배치 로딩해 두고 publicId 만 꺼내 쓰고 있었다(2026-08-11 확인). 같은 객체에서
+     * 커버 이미지도 꺼낼 뿐이라 쿼리는 늘지 않는다.
+     */
+    public static CardResponse from(Card card, Report report) {
+        return from(card,
+                report != null ? report.getPublicId() : null,
+                ReportCoverImageResponse.from(report));
     }
 
     /** reportPublicId = 이 카드가 참조하는 리포트의 publicId(없으면 null). 소셜 필드 null(목록·저장 응답용). */
     public static CardResponse from(Card card, UUID reportPublicId) {
+        return from(card, reportPublicId, null);
+    }
+
+    private static CardResponse from(Card card, UUID reportPublicId,
+                                     ReportCoverImageResponse coverImage) {
         return new CardResponse(
                 card.getPublicId(),
                 reportPublicId,
-                null,
+                coverImage,
                 card.getTitle(),
                 card.getSummary(),
                 card.getWhyForYou(),

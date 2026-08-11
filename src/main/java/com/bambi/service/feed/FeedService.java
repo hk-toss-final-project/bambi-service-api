@@ -98,17 +98,23 @@ public class FeedService {
     @Transactional(readOnly = true)
     public List<CardResponse> myFeed(Long userId) {
         List<Card> cards = cardRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
-        // 카드→리포트 publicId 배치 매핑 (프론트가 본문으로 이동할 진입점, N+1 회피)
-        Map<Long, UUID> reportPublicIds = reportPublicIdsByReportId(cards);
+        // 카드→리포트 배치 매핑 (본문 진입점 publicId + 대표 이미지, N+1 회피)
+        Map<Long, Report> reports = reportsByReportId(cards);
         return cards.stream()
                 // 리포트 없는(즉시) 카드는 reportId=null. 불변맵은 get(null) 에서 NPE 라 null 키 조회를 피한다.
                 .map(c -> CardResponse.from(c,
-                        c.getReportId() == null ? null : reportPublicIds.get(c.getReportId())))
+                        c.getReportId() == null ? null : reports.get(c.getReportId())))
                 .toList();
     }
 
-    /** 카드들이 참조하는 리포트 id → publicId 매핑 (1 IN 쿼리). 리포트 없는 카드는 빠진다. */
-    private Map<Long, UUID> reportPublicIdsByReportId(List<Card> cards) {
+    /**
+     * 카드들이 참조하는 리포트 id → 리포트 매핑 (1 IN 쿼리). 리포트 없는 카드는 빠진다.
+     *
+     * <p>예전에는 여기서 publicId 만 뽑아 담았는데, 목록에 대표 이미지를 붙이면서
+     * (2026-08-11 우석) 같은 객체의 cover_image 컬럼도 필요해졌다. <b>쿼리는 늘지 않는다</b> —
+     * 리포트 엔티티는 이미 이 한 번의 조회로 전부 메모리에 올라와 있었고 값만 버리고 있었다.
+     */
+    private Map<Long, Report> reportsByReportId(List<Card> cards) {
         List<Long> reportIds = cards.stream()
                 .map(Card::getReportId)
                 .filter(Objects::nonNull)
@@ -118,7 +124,7 @@ public class FeedService {
             return Map.of();
         }
         return reportRepository.findAllById(reportIds).stream()
-                .collect(Collectors.toMap(Report::getId, Report::getPublicId));
+                .collect(Collectors.toMap(Report::getId, r -> r));
     }
 
     /**
