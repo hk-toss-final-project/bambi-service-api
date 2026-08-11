@@ -88,6 +88,13 @@ public class FeedService {
      */
     private static final int RANKING_POOL_SIZE = 60;
 
+    /**
+     * 동점 카드 자리 바꾸기 주기(초). 5분 — 데모·실사용에서 몇 번 새로고침하는 동안은 순서가 유지되고,
+     * 잠시 뒤 다시 보면 다른 카드가 위에 온다. 더 짧으면 연속 새로고침에 화면이 튀고,
+     * 더 길면 "계속 고정"으로 느껴진다.
+     */
+    private static final long ROTATION_SLOT_SECONDS = 300L;
+
     @Transactional(readOnly = true)
     public List<CardResponse> myFeed(Long userId) {
         List<Card> cards = cardRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
@@ -215,12 +222,30 @@ public class FeedService {
             return cards;   // 게스트는 개인화 근거가 없다 → 최신순 그대로
         }
         OffsetDateTime now = OffsetDateTime.now();
+        long slot = now.toEpochSecond() / ROTATION_SLOT_SECONDS;
         return cards.stream()
                 .sorted(Comparator
                         .comparingInt((PublicCardResponse card) -> -score(card, now))
+                        .thenComparingInt(card -> rotationKey(card, slot, viewerId))
                         .thenComparing(PublicCardResponse::createdAt,
                                 Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
+    }
+
+    /**
+     * 동점 카드끼리의 자리 바꾸기 (2026-08-11 우석 — "피드가 계속 고정이라 별로다").
+     *
+     * <p>우리 피드는 새 카드가 자주 생기지 않아서, 점수가 같은 카드들이 항상 같은 순서로 붙어 있으면
+     * 화면이 통째로 굳어 보인다. 그래서 <b>같은 점수 구간 안에서만</b> 시간대별로 자리를 바꾼다 —
+     * 관심사·인기 순위(점수)는 그대로고, 우열을 가릴 수 없는 카드들의 순서만 돈다.
+     *
+     * <p><b>난수가 아니라 시간 슬롯 해시다.</b> 같은 슬롯 안에서는 몇 번을 새로고침해도 순서가 같아
+     * "방금 본 카드가 사라졌다"가 생기지 않고, 슬롯이 넘어가면 다른 얼굴이 위로 온다.
+     * 뷰어 id 를 섞어 사람마다 다른 배치를 보게 한다(모두가 같은 카드만 보는 쏠림 방지).
+     */
+    private static int rotationKey(PublicCardResponse card, long slot, Long viewerId) {
+        int seed = Objects.hash(card.publicId(), slot, viewerId);
+        return seed == Integer.MIN_VALUE ? 0 : Math.abs(seed);
     }
 
     /** 랭킹 점수 — 규칙은 {@link #rankForViewer} 문서 참조. */

@@ -392,4 +392,31 @@ class FeedServiceTest {
         assertThat(feed).hasSize(2);
         verify(interestRepository, never()).findActiveTopicIds(any());
     }
+
+    @Test
+    void 랭킹_같은_슬롯_안에서는_순서가_고정이다() {
+        // 자리 바꾸기는 시간 슬롯(5분) 단위다 — 연속 새로고침에 화면이 튀면 안 된다.
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        Card a = rankCard(30L, now, Set.of());
+        Card b = rankCard(31L, now, Set.of());
+        Card c = rankCard(32L, now, Set.of());
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(a, b, c));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of("ai_ml"));
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveUnlinkedNames(1L)).thenReturn(List.of());
+        when(cardRepository.findLikedCardTopicIds(1L)).thenReturn(List.of());
+        when(cardRepository.findScrappedCardTopicIds(1L)).thenReturn(List.of());
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<String> first = service.publicFeed(1L, false, 20).stream()
+                .map(r -> r.publicId().toString()).toList();
+        List<String> second = service.publicFeed(1L, false, 20).stream()
+                .map(r -> r.publicId().toString()).toList();
+
+        assertThat(first).isEqualTo(second);   // 같은 슬롯 = 같은 순서
+    }
 }
