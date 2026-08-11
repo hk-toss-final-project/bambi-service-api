@@ -5,6 +5,10 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.like.dto.LikeResponse;
+import com.bambi.service.notification.NotificationService;
+import com.bambi.service.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,12 +24,19 @@ public class LikeService {
 
     private static final String PUBLIC = "PUBLIC";
 
+    private static final Logger log = LoggerFactory.getLogger(LikeService.class);
+
     private final LikeRepository likeRepository;
     private final CardRepository cardRepository;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
-    public LikeService(LikeRepository likeRepository, CardRepository cardRepository) {
+    public LikeService(LikeRepository likeRepository, CardRepository cardRepository,
+                       UserRepository userRepository, NotificationService notificationService) {
         this.likeRepository = likeRepository;
         this.cardRepository = cardRepository;
+        this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -35,8 +46,26 @@ public class LikeService {
         if (!PUBLIC.equals(card.getVisibility())) {
             throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
         }
-        likeRepository.insertIgnore(userId, card.getId());   // 멱등
+        int inserted = likeRepository.insertIgnore(userId, card.getId());   // 멱등
+        // 신규 좋아요 + 남의 카드일 때만 작성자에게 알림(2026-08-11 여진 요청).
+        // 본인 카드 좋아요는 제외, 재좋아요(0건)는 호출도 안 한다(event_key UNIQUE 가 이중 방어).
+        if (inserted > 0 && !card.getUserId().equals(userId)) {
+            notifyLiked(userId, card);
+        }
         return new LikeResponse(true, likeRepository.countByCardId(card.getId()));
+    }
+
+    /** 좋아요 알림 — 생성 실패가 좋아요 자체를 깨지 않게 삼킨다(FOLLOW 알림과 동일 정책). */
+    private void notifyLiked(Long likerId, Card card) {
+        try {
+            userRepository.findById(likerId).ifPresent(liker ->
+                    notificationService.notifyLiked(
+                            card.getUserId(), likerId, liker.getDisplayName(),
+                            card.getId(), card.getPublicId(), card.getTitle()));
+        } catch (RuntimeException e) {
+            log.warn("[Like] 좋아요 알림 생성 실패 — 좋아요는 정상 처리(likerId={}, cardId={})",
+                    likerId, card.getId(), e);
+        }
     }
 
     @Transactional

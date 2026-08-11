@@ -55,4 +55,23 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("eventKey") String eventKey,
             @Param("title") String title,
             @Param("targetPath") String targetPath);
+
+    /**
+     * 좋아요 알림 (2026-08-11 여진 요청 — LIKE 타입, 마이그레이션 불요).
+     * event_key 가 카드×행위자 단위라 좋아요↔취소 반복은 알림을 한 번만 만든다(FOLLOW 와 동일 정책).
+     */
+    @Modifying
+    @Query(value = """
+            INSERT INTO service.notifications (
+                user_id, event_key, type, title, body, target_path
+            ) VALUES (
+                :userId, :eventKey, 'LIKE', :title, null, :targetPath
+            )
+            ON CONFLICT (user_id, event_key) DO NOTHING
+            """, nativeQuery = true)
+    int insertLike(
+            @Param("userId") Long userId,
+            @Param("eventKey") String eventKey,
+            @Param("title") String title,
+            @Param("targetPath") String targetPath);
 }

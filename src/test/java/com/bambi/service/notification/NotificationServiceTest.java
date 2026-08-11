@@ -62,6 +62,21 @@ class NotificationServiceTest {
     }
 
     @Test
+    void 좋아요_알림은_카드x행위자_멱등키와_카드_상세_경로를_저장한다() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        NotificationService service = new NotificationService(repository);
+        UUID cardPublicId = UUID.randomUUID();
+
+        service.notifyLiked(7L, 3L, "파라미", 10L, cardPublicId, "반도체 전망");
+
+        verify(repository).insertLike(
+                7L,
+                "like:10:3",                                  // 같은 카드 재좋아요 = 알림 1번만
+                "파라미님이 「반도체 전망」 보고서를 좋아해요",
+                "/report/" + cardPublicId);
+    }
+
+    @Test
     void 팔로워_표시명이_비면_사용자로_대체한다() {
         NotificationRepository repository = mock(NotificationRepository.class);
         NotificationService service = new NotificationService(repository);

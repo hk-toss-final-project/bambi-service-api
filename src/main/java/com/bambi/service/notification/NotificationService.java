@@ -63,6 +63,26 @@ public class NotificationService {
                 "/users/" + followerPublicId);
     }
 
+    /**
+     * 좋아요 알림 (2026-08-11 여진 요청). 클릭하면 좋아요가 눌린 카드 상세로 이동한다.
+     *
+     * <p>event_key = {@code like:카드id:행위자id} — 같은 사람이 같은 카드에 좋아요↔취소를
+     * 반복해도 알림은 최초 1번만(여진 정책 질문에 대한 확정: 재생성 안 함, UNIQUE 가 막음).
+     * 본인 카드 좋아요 제외는 호출부(LikeService)가 판단한다.
+     */
+    @Transactional
+    public void notifyLiked(Long ownerId, Long likerId, String likerDisplayName,
+                            Long cardId, UUID cardPublicId, String cardTitle) {
+        String name = likerDisplayName == null || likerDisplayName.isBlank()
+                ? "사용자" : likerDisplayName.strip();
+        String title = cardTitle == null ? "" : cardTitle.strip();
+        notificationRepository.insertLike(
+                ownerId,
+                "like:" + cardId + ":" + likerId,
+                truncate(name + "님이 「" + title + "」 보고서를 좋아해요", 200),
+                "/report/" + cardPublicId);
+    }
+
     /** 최근 알림과 읽지 않은 개수를 반환한다. */
     @Transactional(readOnly = true)
     public NotificationListResponse list(Long userId) {
