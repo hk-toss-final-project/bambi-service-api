@@ -61,9 +61,12 @@ app:
     read-timeout-ms: ${AGENT_READ_TIMEOUT_MS:3000}
     # 아침 브리핑 주제 선정(GET /users/{id}/briefing-topics)은 agent 안에서 LLM 이 돈다 —
     # 위 3초로는 매번 타임아웃이라 전원이 등록 관심사 폴백으로 떨어진다("전환했는데 안 바뀜").
-    # ⚠️ 스케줄러가 사용자를 순차로 돌며 1인 1회 부르므로 최악은 사용자 수 × 이 값이다.
-    #    사용자가 늘면 이 값을 키우지 말고 스케줄러 루프를 병렬로 바꿔야 한다.
-    selection-read-timeout-ms: ${AGENT_SELECTION_READ_TIMEOUT_MS:20000}
+    # 근거: 유림님 08-10 벤치 평균 2.2초·최대 5.07초, 12케이스 중 3개가 3초 초과.
+    #       실서비스는 후보가 더 많고 agent 부하도 있어 관측 최대의 3배로 잡았다(우석 08-11).
+    # ⚠️ 스케줄러가 사용자를 순차로 돌며 1인 1회 부르므로 최악은 사용자 수 × 이 값이다
+    #    (27명 기준 약 7분 — 07:00 창 안). 사용자가 늘면 이 값을 키우지 말고 스케줄러 루프를
+    #    병렬로 바꿔야 한다.
+    selection-read-timeout-ms: ${AGENT_SELECTION_READ_TIMEOUT_MS:15000}
     publish:
       # 발행 claim/ack 클라이언트 구현 선택: mock(인프로세스 큐, P0) | http(실제 agent-api 호출, P1)
       # 미설정 시 mock — 로컬/데모는 mock, agent-api 붙일 땐 http.
