@@ -2,6 +2,7 @@ package com.bambi.service.wiki;
 
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
@@ -36,7 +37,10 @@ class AgentWikiClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://agent.local");
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new AgentWikiClient(builder.build(), "/internal/v1");
+        RestClient restClient = builder.build();
+        // 운영에서는 주제 선정만 타임아웃이 긴 별도 빈을 쓴다. 여기서는 같은 Mock 서버에
+        // 물려 두 경로가 같은 규약(경로·404 정규화)을 지키는지 한 번에 검증한다.
+        client = new AgentWikiClient(restClient, restClient, "/internal/v1");
     }
 
     @Test
@@ -176,5 +180,46 @@ class AgentWikiClientTest {
         assertThat(response.deletedSourceVersionCount()).isEqualTo(6);
         assertThat(response.redactedSourceEventCount()).isEqualTo(4);
         assertThat(response.cancelledJobCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("아침 주제 선정: snake_case 응답을 읽고 limit 을 질의로 붙인다")
+    void getBriefingTopicsMapsSnakeCaseAndPassesLimit() {
+        String agentBody = """
+                {"user_id":"7","topics":["코스닥","폭염","웹툰"],
+                 "reason":"최근 저장한 글이 시장·날씨에 몰려 있다","candidate_count":19}
+                """;
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-topics?limit=3"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(agentBody, MediaType.APPLICATION_JSON));
+
+        BriefingTopicsSelection selection = client.getBriefingTopics(7L, 3);
+
+        assertThat(selection.normalizedTopics()).containsExactly("코스닥", "폭염", "웹툰");
+        assertThat(selection.candidateCount()).isEqualTo(19);
+        assertThat(selection.reasonOrEmpty()).isEqualTo("최근 저장한 글이 시장·날씨에 몰려 있다");
+    }
+
+    @Test
+    @DisplayName("아침 주제 선정: 위키 없는 사용자(404)는 오류가 아니라 빈 결과다")
+    void getBriefingTopicsReturnsEmptyOnNotFound() {
+        // 신규 사용자에게 500 을 올리면 스케줄러가 그 사용자를 실패로 처리한다.
+        // 폴백(등록 관심사)으로 넘어가야 하므로 빈 결과로 정규화한다 — getTags 와 같은 정책.
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-topics?limit=3"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThat(client.getBriefingTopics(7L, 3).normalizedTopics()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("아침 주제 선정: agent 오류(503)는 그대로 올린다 — 호출부가 폴백을 정한다")
+    void getBriefingTopicsRaisesOnServerError() {
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-topics?limit=3"))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        assertThatThrownBy(() -> client.getBriefingTopics(7L, 3))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AGENT_UNAVAILABLE);
     }
 }

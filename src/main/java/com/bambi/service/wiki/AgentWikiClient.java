@@ -10,6 +10,7 @@ import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
 import com.bambi.service.wiki.dto.WikiResetResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -29,11 +30,14 @@ import org.springframework.web.client.RestClientResponseException;
 public class AgentWikiClient {
 
     private final RestClient restClient;
+    private final RestClient selectionRestClient;
     private final String internalPrefix;
 
     public AgentWikiClient(RestClient agentRestClient,
+                           @Qualifier("agentSelectionRestClient") RestClient agentSelectionRestClient,
                            @Value("${app.agent.internal-prefix}") String internalPrefix) {
         this.restClient = agentRestClient;
+        this.selectionRestClient = agentSelectionRestClient;
         this.internalPrefix = internalPrefix;
     }
 
@@ -48,10 +52,15 @@ public class AgentWikiClient {
      * <p>위키가 없는 사용자는 agent 가 404 를 준다. 그건 오류가 아니라 <b>정상 상태</b>라
      * 빈 결과로 바꿔 돌려주고, 호출부가 등록 관심사 폴백으로 넘어간다({@code getTags} 와 같은 정책).
      *
+     * <p><b>이 호출만 타임아웃이 길다.</b> agent 안에서 LLM 이 돌기 때문에 다른 위키 조회와 같은
+     * 3초로는 매번 타임아웃이 나고, 그러면 전원이 폴백으로 떨어져 "전환했는데 안 바뀐" 상태가 된다.
+     * 그래서 {@code agentSelectionRestClient} 를 쓴다 — 나머지 호출은 짧은 쪽 그대로다.
+     *
      * @param limit agent 계약상 1~5
      */
     public BriefingTopicsSelection getBriefingTopics(long userId, int limit) {
-        return getOrEmpty("/users/" + userId + "/briefing-topics?limit=" + limit,
+        return getOrEmpty(selectionRestClient,
+                "/users/" + userId + "/briefing-topics?limit=" + limit,
                 BriefingTopicsSelection.class, BriefingTopicsSelection.empty());
     }
 
@@ -118,8 +127,12 @@ public class AgentWikiClient {
     }
 
     private <T> T getOrEmpty(String pathSuffix, Class<T> type, T emptyValue) {
+        return getOrEmpty(restClient, pathSuffix, type, emptyValue);
+    }
+
+    private <T> T getOrEmpty(RestClient client, String pathSuffix, Class<T> type, T emptyValue) {
         try {
-            return restClient.get()
+            return client.get()
                     .uri(internalPrefix + pathSuffix)
                     .retrieve()
                     .body(type);
