@@ -114,6 +114,33 @@ class FeedServiceTest {
     }
 
     @Test
+    void 추천매칭_등록관심사가_없어도_좋아요한_카드의_topic_으로_매칭된다() {
+        // 행동 선호 가중(2026-08-11): 좋아요·북마크한 카드의 topic = 뷰어 관심. 라이브 테이블
+        // 직접 참조라 취소하면 자동 차감된다(별도 로직 없음).
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(12L);
+        when(card.getUserId()).thenReturn(2L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(card.getTaxonomyTopicIds()).thenReturn(Set.of("ai_ml"));
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of());      // 등록 관심사 없음
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(cardRepository.findLikedCardTopicIds(1L)).thenReturn(List.of("ai_ml"));  // 좋아요 이력만
+        when(cardRepository.findScrappedCardTopicIds(1L)).thenReturn(List.of());
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        assertThat(feed.get(0).matchedTopics()).extracting(PublicCardResponse.MatchedTopic::topicId)
+                .containsExactly("ai_ml");
+    }
+
+    @Test
     void 추천매칭_topic_은_안겹쳐도_같은_category_면_matchedCategories_로_보강한다() {
         Card card = mock(Card.class);
         when(card.getId()).thenReturn(11L);

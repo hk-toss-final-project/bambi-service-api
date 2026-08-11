@@ -79,4 +79,18 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     @Query("select c from Card c where c.visibility = 'PUBLIC' and c.deletedAt is null "
             + "and c.userId in :authorIds order by c.createdAt desc")
     List<Card> findPublicFeedByAuthors(@Param("authorIds") Collection<Long> authorIds, Pageable pageable);
+
+    /**
+     * 뷰어가 <b>좋아요</b>한 카드들의 taxonomy topic 집합 — 추천 선호 가중(2026-08-11 확정:
+     * 선호 신호는 좋아요·북마크 2개만, agent 미전달·service 라이브 테이블 직접 참조).
+     * 취소하면 행이 사라져 자동 차감, 기존 데이터는 자동 소급된다.
+     */
+    @Query("select distinct topic from Card c join c.taxonomyTopicIds topic, Like l "
+            + "where l.cardId = c.id and l.userId = :userId and c.deletedAt is null")
+    List<String> findLikedCardTopicIds(@Param("userId") Long userId);
+
+    /** 뷰어가 <b>북마크(스크랩)</b>한 카드들의 taxonomy topic 집합 — 위와 동일 원칙. */
+    @Query("select distinct topic from Card c join c.taxonomyTopicIds topic, Scrap s "
+            + "where s.cardId = c.id and s.userId = :userId and c.deletedAt is null")
+    List<String> findScrappedCardTopicIds(@Param("userId") Long userId);
 }

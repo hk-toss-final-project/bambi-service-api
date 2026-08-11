@@ -177,6 +177,12 @@ public class FeedService {
             return Map.of();   // 게스트 → 매칭 없음
         }
         Set<String> viewerTopics = new HashSet<>(interestRepository.findActiveTopicIds(viewerId));
+        // 행동 선호 가중(2026-08-11 확정): 좋아요·북마크한 카드의 topic 도 뷰어 관심으로 간주한다.
+        // 신호는 이 2개뿐 — 팔로우는 제외(작성자 관심사가 여러 개라 신호가 모호, 우석 결정).
+        // agent 로 보내지 않고 라이브 테이블을 직접 읽는다(송우 결정) → 취소=자동 차감, 소급=자동.
+        // category 는 등록 관심사 것만 유지한다 — 행동 신호까지 category 로 넓히면 과대 매칭된다.
+        viewerTopics.addAll(cardRepository.findLikedCardTopicIds(viewerId));
+        viewerTopics.addAll(cardRepository.findScrappedCardTopicIds(viewerId));
         Set<String> viewerCategories = new HashSet<>(interestRepository.findActiveCategoryIds(viewerId));
         if (viewerTopics.isEmpty() && viewerCategories.isEmpty()) {
             return Map.of();   // taxonomy 연결 관심사 없음 → 매칭 불가(전부 빈 목록)
