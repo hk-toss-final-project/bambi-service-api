@@ -58,6 +58,40 @@ class ScrapServiceTest {
         verify(outbox).enqueueRemove(7L, 42L, "content-1");
     }
 
+    // ---- 본인 PRIVATE 카드 스크랩 (2026-08-11 확장) ----------------------------
+
+    @Test
+    void 본인_PRIVATE_카드는_스크랩할_수_있고_Wiki_반영까지_이어진다() {
+        UUID publicId = UUID.randomUUID();
+        Card mine = mock(Card.class);
+        when(mine.getId()).thenReturn(42L);
+        when(mine.getVisibility()).thenReturn("PRIVATE");
+        when(mine.getUserId()).thenReturn(7L);              // 소유자 = 요청자
+        when(mine.getExternalContentId()).thenReturn("content-1");
+        when(cards.findByPublicIdAndDeletedAtIsNull(publicId)).thenReturn(Optional.of(mine));
+        when(scraps.insertIgnore(7L, 42L)).thenReturn(1);
+
+        var response = service.scrap(7L, publicId.toString());
+
+        assertThat(response.scrapped()).isTrue();
+        verify(outbox).enqueueAdd(7L, 42L, "content-1");   // agent content-marks 중계도 동일 경로
+    }
+
+    @Test
+    void 타인_PRIVATE_카드는_여전히_존재_노출_없이_404다() {
+        UUID publicId = UUID.randomUUID();
+        Card others = mock(Card.class);
+        when(others.getVisibility()).thenReturn("PRIVATE");
+        when(others.getUserId()).thenReturn(99L);           // 소유자 ≠ 요청자
+        when(cards.findByPublicIdAndDeletedAtIsNull(publicId)).thenReturn(Optional.of(others));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.scrap(7L, publicId.toString()))
+                .isInstanceOf(com.bambi.service.common.error.ApiException.class);
+        verify(scraps, never()).insertIgnore(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong());
+    }
+
     private Card externalCard(UUID publicId) {
         Card card = mock(Card.class);
         when(card.getId()).thenReturn(42L);

@@ -33,12 +33,14 @@ public interface ScrapRepository extends JpaRepository<Scrap, ScrapId> {
     int deleteRelation(@Param("userId") Long userId, @Param("cardId") Long cardId);
 
     /**
-     * 내 스크랩 목록 — 담아둔 카드 중 아직 PUBLIC(살아있음)인 것만 스크랩 최신순으로.
-     * 비공개 전환/삭제된 카드는 목록에서 자동 숨김(WHERE 조건). tags 는 Card.interestTags @BatchSize 로 로딩.
+     * 내 스크랩 목록 — 담아둔 카드 중 "아직 PUBLIC 이거나 <b>내 카드</b>"인 것만 스크랩 최신순으로
+     * (2026-08-11 확장 — 본인 카드는 공개설정과 무관하게 보인다).
+     * 남의 카드는 비공개 전환/삭제 시 목록에서 자동 숨김(WHERE 조건 — 기존 프라이버시 규칙).
+     * tags 는 Card.interestTags @BatchSize 로 로딩.
      */
     @Query("select c from Card c, Scrap s "
             + "where s.cardId = c.id and s.userId = :userId "
-            + "and c.visibility = 'PUBLIC' and c.deletedAt is null "
+            + "and (c.visibility = 'PUBLIC' or c.userId = :userId) and c.deletedAt is null "
             + "order by s.createdAt desc")
-    List<Card> findMyScrappedPublicCards(@Param("userId") Long userId);
+    List<Card> findMyScrappedVisibleCards(@Param("userId") Long userId);
 }
