@@ -44,6 +44,25 @@ public class NotificationService {
                 reportType);
     }
 
+    /**
+     * 신규 팔로워 알림 (2026-08-11 여진 요청). 클릭하면 팔로워 프로필로 이동한다.
+     *
+     * <p>event_key = {@code follow:팔로워id} — 같은 사람이 팔로우↔언팔을 반복해도 알림은
+     * 최초 1번만 만들어진다(UNIQUE 가 막음). 표시명이 비어 있으면 "사용자"로 대체한다
+     * (프로필 화면과 같은 폴백).
+     */
+    @Transactional
+    public void notifyFollowed(Long targetUserId, Long followerId,
+                               String followerDisplayName, UUID followerPublicId) {
+        String name = followerDisplayName == null || followerDisplayName.isBlank()
+                ? "사용자" : followerDisplayName.strip();
+        notificationRepository.insertFollow(
+                targetUserId,
+                "follow:" + followerId,
+                truncate(name + "님이 나를 팔로우하기 시작했어요", 200),
+                "/users/" + followerPublicId);
+    }
+
     /** 최근 알림과 읽지 않은 개수를 반환한다. */
     @Transactional(readOnly = true)
     public NotificationListResponse list(Long userId) {

@@ -32,7 +32,10 @@ class FollowServiceTest {
     private final FollowRepository followRepository = mock(FollowRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final CardRepository cardRepository = mock(CardRepository.class);
-    private final FollowService service = new FollowService(followRepository, userRepository, cardRepository);
+    private final com.bambi.service.notification.NotificationService notificationService =
+            mock(com.bambi.service.notification.NotificationService.class);
+    private final FollowService service =
+            new FollowService(followRepository, userRepository, cardRepository, notificationService);
 
     @Test
     void 자기_자신은_팔로우할_수_없다() {
@@ -71,6 +74,53 @@ class FollowServiceTest {
         assertThat(res.following()).isTrue();
         assertThat(res.followerCount()).isEqualTo(5L);
         verify(followRepository).insertIgnore(1L, 2L);   // ON CONFLICT DO NOTHING (중복이어도 예외 없음)
+    }
+
+    // ---- 팔로우 알림 (2026-08-11 여진 요청) ------------------------------------
+
+    @Test
+    void 첫_팔로우면_대상에게_알림을_만든다() {
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+        when(followRepository.insertIgnore(1L, 2L)).thenReturn(1);   // 새 관계
+        User follower = mock(User.class);
+        when(follower.getDisplayName()).thenReturn("파라미");
+        UUID followerPublicId = UUID.randomUUID();
+        when(follower.getPublicId()).thenReturn(followerPublicId);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(follower));
+
+        service.follow(1L, UUID.randomUUID().toString());
+
+        verify(notificationService).notifyFollowed(2L, 1L, "파라미", followerPublicId);
+    }
+
+    @Test
+    void 재팔로우는_알림을_만들지_않는다() {
+        // 팔로우↔언팔 반복이 알림 스팸이 되면 안 된다 — insertIgnore 0건이면 호출 자체를 안 한다.
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+        when(followRepository.insertIgnore(1L, 2L)).thenReturn(0);   // 이미 팔로우 중
+
+        service.follow(1L, UUID.randomUUID().toString());
+
+        verify(notificationService, never()).notifyFollowed(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test
+    void 알림_생성이_실패해도_팔로우는_정상_처리된다() {
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+        when(followRepository.insertIgnore(1L, 2L)).thenReturn(1);
+        when(userRepository.findById(1L)).thenThrow(new RuntimeException("db down"));
+        when(followRepository.countByFolloweeId(2L)).thenReturn(3L);
+
+        FollowResponse res = service.follow(1L, UUID.randomUUID().toString());   // 예외 없이
+
+        assertThat(res.following()).isTrue();
+        assertThat(res.followerCount()).isEqualTo(3L);
     }
 
     @Test

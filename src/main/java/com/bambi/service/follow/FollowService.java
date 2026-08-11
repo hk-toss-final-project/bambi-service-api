@@ -6,8 +6,11 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.follow.dto.FollowResponse;
 import com.bambi.service.follow.dto.FollowUserResponse;
 import com.bambi.service.follow.dto.ProfileResponse;
+import com.bambi.service.notification.NotificationService;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,16 +31,21 @@ public class FollowService {
 
     private static final String PUBLIC = "PUBLIC";
 
+    private static final Logger log = LoggerFactory.getLogger(FollowService.class);
+
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
     private final CardRepository cardRepository;
+    private final NotificationService notificationService;
 
     public FollowService(FollowRepository followRepository,
                          UserRepository userRepository,
-                         CardRepository cardRepository) {
+                         CardRepository cardRepository,
+                         NotificationService notificationService) {
         this.followRepository = followRepository;
         this.userRepository = userRepository;
         this.cardRepository = cardRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -46,8 +54,30 @@ public class FollowService {
         if (followeeId.equals(followerId)) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "자기 자신은 팔로우할 수 없습니다.");
         }
-        followRepository.insertIgnore(followerId, followeeId);   // 멱등
+        int inserted = followRepository.insertIgnore(followerId, followeeId);   // 멱등
+        if (inserted > 0) {
+            // 실제로 새 관계가 생겼을 때만 알림 — 재팔로우(0건)는 호출도 안 한다.
+            // (호출해도 event_key UNIQUE 가 막지만, 여기서 거르면 의도가 코드에 보인다.)
+            notifyFollowed(followerId, followeeId);
+        }
         return new FollowResponse(true, followRepository.countByFolloweeId(followeeId));
+    }
+
+    /**
+     * 신규 팔로워 알림 (2026-08-11 여진 요청). 알림 생성 실패가 팔로우 자체를 깨지 않게
+     * 삼킨다 — insertFollow 는 ON CONFLICT DO NOTHING 이라 실패 자체가 드물지만,
+     * 팔로워 행이 조회되지 않는 경합 등 방어용이다.
+     */
+    private void notifyFollowed(Long followerId, Long followeeId) {
+        try {
+            userRepository.findById(followerId).ifPresent(follower ->
+                    notificationService.notifyFollowed(
+                            followeeId, followerId,
+                            follower.getDisplayName(), follower.getPublicId()));
+        } catch (RuntimeException e) {
+            log.warn("[Follow] 팔로우 알림 생성 실패 — 팔로우는 정상 처리(followerId={}, followeeId={})",
+                    followerId, followeeId, e);
+        }
     }
 
     @Transactional

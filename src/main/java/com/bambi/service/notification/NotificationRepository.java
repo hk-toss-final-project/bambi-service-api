@@ -35,4 +35,24 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("body") String body,
             @Param("targetPath") String targetPath,
             @Param("reportType") String reportType);
+
+    /**
+     * 팔로우 알림 (2026-08-11 여진 요청 — FOLLOW 타입, 마이그레이션 불요).
+     * event_key 가 (user_id, event_key) UNIQUE 라 같은 사람의 팔로우↔언팔 반복은
+     * 알림을 한 번만 만든다 — 알림 스팸·어뷰징을 DB 가 막는다. report_type 은 리포트 전용이라 null.
+     */
+    @Modifying
+    @Query(value = """
+            INSERT INTO service.notifications (
+                user_id, event_key, type, title, body, target_path
+            ) VALUES (
+                :userId, :eventKey, 'FOLLOW', :title, null, :targetPath
+            )
+            ON CONFLICT (user_id, event_key) DO NOTHING
+            """, nativeQuery = true)
+    int insertFollow(
+            @Param("userId") Long userId,
+            @Param("eventKey") String eventKey,
+            @Param("title") String title,
+            @Param("targetPath") String targetPath);
 }
