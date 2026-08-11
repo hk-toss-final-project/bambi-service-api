@@ -10,8 +10,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * {@link WikiTagsResponse#topTag()} · {@link WikiTagsResponse#topTopic()} 검증.
  *
- * 두 메서드가 항상 같은 태그를 가리켜야 한다 — 기준이 갈리면 스케줄러가 고르는 검색 주제와
- * INTEREST_BUNDLE 이 쓰는 관심사 id 가 서로 다른 태그를 가리키게 된다.
+ * 두 메서드가 항상 같은 태그를 가리켜야 한다 — 기준이 갈리면 이름과 tagId 를 함께 쓰는
+ * 호출부가 서로 다른 태그를 가리키게 된다.
  */
 class WikiTagsResponseTest {
 

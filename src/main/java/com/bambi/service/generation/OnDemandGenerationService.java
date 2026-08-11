@@ -8,7 +8,6 @@ import com.bambi.service.interest.InterestService;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import com.bambi.service.wiki.AgentWikiClient;
-import com.bambi.service.wiki.dto.WikiTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -110,41 +109,6 @@ public class OnDemandGenerationService {
      */
     private boolean accountChangeHistoryEnabled(long userId) {
         return userRepository.findById(userId).map(User::isChangeHistoryEnabled).orElse(false);
-    }
-
-    /**
-     * 관심사 깊게 파기(범주 리포트) 접수 — 위키 관심사 1개를 루트로, 연결 노드 묶음까지 통합 서술한다
-     * (agent {@code generation_scope=INTEREST_BUNDLE}, 2026-08-10 우석·기용 합의로 온디맨드에 채택).
-     *
-     * <p>아침 브리핑에는 쓰지 않는다 — 8/7 철회 사유(검토 없이 받는 자동 리포트에서 이웃 혼입이
-     * 안 보임)가 아침에는 그대로 유효하고, 온디맨드는 사용자가 직접 눌러 받는 경로라 성격이 다르다.
-     * report_type 은 그대로 {@code ON_DEMAND} 다 — 새 값을 만들지 않는다(계약 #20 명문).
-     *
-     * <p>{@code interestTagId} = {@code GET /api/wiki/tags} 의 {@code tagId}. 요청 시점의 내 위키
-     * 관심사에 실재하는지 검증한다 — 위키는 계속 재계산되므로 화면이 들고 있던 stale id 가 올 수 있고,
-     * 그대로 보내면 agent 쪽에서 Job 이 실패해 사용자는 이유를 모른 채 "처리중"만 사라진다.
-     * 없으면 {@link ErrorCode#INTEREST_NOT_FOUND}(404) — 프론트는 목록을 재조회해 다시 고르게 한다.
-     */
-    public GenerationTriggerResponse generateBundleForUser(long userId, String interestTagId) {
-        // 형식(UUID) 검증은 따로 하지 않는다 — 아래 membership 검증이 "agent 가 발급한 실재 id"임을
-        // 보장하므로 형식은 그 안에 포함되고, agent 가 id 체계를 바꿔도 여기가 안 깨진다.
-        WikiTag root = wikiClient.getTags(userId).topTags(Integer.MAX_VALUE).stream()
-                .filter(t -> interestTagId.equals(t.tagId()))
-                .findFirst()
-                .orElseThrow(() -> new ApiException(ErrorCode.INTEREST_NOT_FOUND,
-                        "내 위키 관심사에 없는 태그입니다. 목록을 새로고침해 주세요."));
-        // 멱등키는 온디맨드 분 단위 규칙에 -bundle 접미사 — 일반/Delta 온디맨드와 같은 분에 눌러도
-        // 키가 갈라져 서로를 삼키지 않고, 깊게 파기 연타는 1건으로 합쳐진다.
-        GenerationRequest request = GenerationRequest.interestBundle(
-                onDemandKey(userId, false) + "-bundle", contentType,
-                GenerationPendingService.REPORT_TYPE_ON_DEMAND, interestTagId);
-        String agentJobId = generationClient.requestGeneration(userId, request);
-        // 펜딩 슬롯 제목은 루트 태그 이름 — 고정 문구를 넣으면 무엇을 파는 중인지 안 보인다(스케줄러와 동일 원칙).
-        String id = pendingService.register(userId, request.idempotencyKey(),
-                GenerationPendingService.REPORT_TYPE_ON_DEMAND, root.tag(), contentType, agentJobId);
-        log.info("[OnDemandGeneration] 깊게 파기 요청 userId={}, tagId={}, rootTag={}, idempotencyKey={}, id={}, agentJobId={}",
-                userId, interestTagId, root.tag(), request.idempotencyKey(), id, agentJobId);
-        return GenerationTriggerResponse.accepted(id, agentJobId);
     }
 
     /**

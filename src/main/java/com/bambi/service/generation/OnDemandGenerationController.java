@@ -1,8 +1,6 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.auth.AuthPrincipal;
-import com.bambi.service.common.error.ApiException;
-import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.common.response.ApiResponse;
 import com.bambi.service.generation.dto.GenerationPendingResponse;
 import com.bambi.service.generation.dto.GenerationTriggerRequest;
@@ -46,9 +44,6 @@ public class OnDemandGenerationController {
      * {@code PATCH /api/users/me/settings} 의 {@code changeHistoryEnabled}). 어떤 주제를 요청하든
      * 서비스가 저장된 설정값을 읽어 싣는다. 과거 body 의 {@code changeHistoryEnabled} 필드는
      * 제거했다 — 프론트가 보낸 적이 없어(전송 코드 0곳 실측) 하위호환 영향이 없다.
-     *
-     * <p>{@code interestTagId} 를 보내면 관심사 깊게 파기(범주 리포트)로 만든다(2026-08-10 우석·기용).
-     * 루트 주제는 agent 가 해당 관심사에서 정하므로 {@code topic} 과 배타다(400).
      */
     @PostMapping("/generate")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -56,14 +51,6 @@ public class OnDemandGenerationController {
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestBody(required = false) @Valid GenerationTriggerRequest request) {
         String topic = request != null ? request.normalizedTopic() : null;
-        if (request != null && request.wantsDeepDive()) {
-            if (topic != null) {
-                throw new ApiException(ErrorCode.VALIDATION_ERROR,
-                        "깊게 파기는 관심사 선택만 받습니다. topic 은 함께 보낼 수 없습니다.");
-            }
-            return ApiResponse.ok(onDemandGenerationService.generateBundleForUser(
-                    principal.id(), request.normalizedInterestTagId()));
-        }
         return ApiResponse.ok(
                 onDemandGenerationService.generateForUser(principal.id(), topic));
     }

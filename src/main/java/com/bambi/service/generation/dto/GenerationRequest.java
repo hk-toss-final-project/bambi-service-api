@@ -33,13 +33,6 @@ import java.util.List;
  *                       신규·갱신 사실을 갈라 정리한 통합 보고서를 만든다 — <b>기존 생성 경로를 대체한다.</b>
  *                       <b>끌 때는 false 가 아니라 null 을 넣는다</b> — agent 기본값이 false 라
  *                       보낼 이유가 없고, null 이어야 직렬화에서 빠져 기존 요청 본문과 완전히 같아진다.
- * @param generationScope 검색 범위 (agent 계약). null(기본)이면 SINGLE_TOPIC 동작 그대로다.
- *                       {@code INTEREST_BUNDLE} 이면 활성 LLM Wiki 관심사와 연결 노드 묶음으로
- *                       깊게 파는 리포트를 만든다 — 이때 {@code topic}·{@code topics} 는 보내지 않고
- *                       (topics 동시 전송은 agent 가 422 로 거부), 루트 키워드는 agent 가 관심사에서 정한다.
- * @param interestId     INTEREST_BUNDLE 의 루트 관심사 UUID = {@code GET /api/wiki/tags} 의
- *                       {@code tagId} (계약 문서 대응표: agent {@code interest_id} 리네임 값).
- *                       INTEREST_BUNDLE 에서만 필수, 그 외엔 null(직렬화 생략).
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)   // language/scheduled_at/report_type/topics 빈 값은 직렬화 생략
 public record GenerationRequest(
@@ -50,12 +43,7 @@ public record GenerationRequest(
         @JsonProperty("language") String language,
         @JsonProperty("scheduled_at") OffsetDateTime scheduledAt,
         @JsonProperty("report_type") String reportType,
-        @JsonProperty("change_history_enabled") Boolean changeHistoryEnabled,
-        @JsonProperty("generation_scope") String generationScope,
-        @JsonProperty("interest_id") String interestId) {
-
-    /** agent {@code GenerationScope}(mvp.py) 의 범주 묶음 값. report_type 이 아니다 — 새 report_type 값 금지(계약 #20). */
-    public static final String SCOPE_INTEREST_BUNDLE = "INTEREST_BUNDLE";
+        @JsonProperty("change_history_enabled") Boolean changeHistoryEnabled) {
 
     /**
      * 단일 주제 요청 — {@code topic} 이 <b>실제 검색어</b>다. 온디맨드가 쓴다.
@@ -77,23 +65,7 @@ public record GenerationRequest(
                                                 String contentType, String reportType,
                                                 boolean changeHistory) {
         return new GenerationRequest(idempotencyKey, searchTopic, List.of(), contentType,
-                null, null, reportType, changeHistory ? Boolean.TRUE : null, null, null);
-    }
-
-    /**
-     * 관심사 범주(깊게 파기) 요청 — 루트 관심사와 위키 연결 노드 묶음으로 통합 리포트를 만든다
-     * (agent-api #16, 프롬프트 가드 f0e3bed·c5e63ce + 벤치마크 10/10 검증 후 채택, 2026-08-10 우석·기용).
-     *
-     * <p>{@code topic}·{@code topics} 는 싣지 않는다 — 루트 키워드는 agent 가 관심사에서 정하고,
-     * {@code topics} 동시 전송은 agent model_validator 가 422 로 거부한다. Delta 와의 조합도
-     * 계약에 정의가 없어 싣지 않는다(호출부가 먼저 거른다).
-     *
-     * @param interestTagId {@code GET /api/wiki/tags} 응답의 {@code tagId}. 형식 검증은 호출부 몫.
-     */
-    public static GenerationRequest interestBundle(String idempotencyKey, String contentType,
-                                                   String reportType, String interestTagId) {
-        return new GenerationRequest(idempotencyKey, null, List.of(), contentType,
-                null, null, reportType, null, SCOPE_INTEREST_BUNDLE, interestTagId);
+                null, null, reportType, changeHistory ? Boolean.TRUE : null);
     }
 
     /**
@@ -113,6 +85,6 @@ public record GenerationRequest(
         // 아침 브리핑에는 Delta 를 켜지 않는다. 둘 다 "기존 생성 경로를 대체"라서 어느 쪽이
         // 이기는지 계약에 정의가 없다(agent-api #12 / #20). 온디맨드에서만 선택한다.
         return new GenerationRequest(idempotencyKey, titleTopic, List.copyOf(topics), contentType,
-                null, null, reportType, null, null, null);
+                null, null, reportType, null);
     }
 }

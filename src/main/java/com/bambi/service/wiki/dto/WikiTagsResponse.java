@@ -52,9 +52,8 @@ public record WikiTagsResponse(
     /**
      * 대표 관심사(태그) 1개 — score 가 가장 높은 태그를 <b>객체째</b> 돌려준다.
      *
-     * <p>이름만 필요하면 {@link #topTopic()} 을 쓰면 되지만, agent 의 {@code INTEREST_BUNDLE}
-     * 생성은 이름이 아니라 <b>{@code tagId}</b>(=agent {@code interest_id})를 요구한다.
-     * 두 값을 같이 써야 하는 호출부가 태그를 두 번 찾지 않도록 여기서 한 번에 준다.
+     * <p>이름만 필요하면 {@link #topTopic()} 을 쓰면 되지만, {@code tagId} 도 함께 써야 하는
+     * 호출부가 태그를 두 번 찾지 않도록 여기서 한 번에 준다.
      *
      * <p>선택 기준은 {@link #topTags(int)}·{@link #topTopic()} 과 완전히 같다 — 같은 응답이면
      * 세 메서드가 항상 같은 태그(들)를 가리킨다. 기준을 따로 두면(예: tagId 없는 태그 제외)
