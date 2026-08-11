@@ -1,5 +1,5 @@
 -- =============================================================
--- V19__card_taxonomy_topics.sql — 카드↔taxonomy 토픽 매핑 (추천 피드 매칭, 2026-08-11 확정)
+-- V24__card_taxonomy_topics.sql — 카드↔taxonomy 토픽 매핑 (추천 피드 매칭, 2026-08-11 확정)
 -- -------------------------------------------------------------
 -- 추천 피드 문제: 사용자 관심사(interests.taxonomy_topic_id)와 카드 태그(card_interest_tags, 자유문자열)
 -- 사이에 공통 식별자가 없어 exact match 가 0건 → Empty. 카드에도 taxonomy topic_key 를 붙여
@@ -13,7 +13,9 @@
 --   cards.taxonomy_version         VARCHAR(50)  ↔ Card.taxonomyVersion   (String, nullable)
 -- card_interest_tags(V5) 저장 패턴을 그대로 미러링한다(카드 소유 값, 카드 삭제 시 CASCADE).
 --
--- 번호: 병합된 최대 V18(user_briefing_topics) 다음 = V19. Flyway out-of-order ON. 앞 버전 수정 금지.
+-- 번호: V19(wiki_build_operations, #76)와 충돌해 V24 로 renumber. main 이 V23 까지 차 있어 다음 빈 번호 = V24.
+--   (out-of-order 는 늦게 온 낮은 번호를 허용하는 것이지 중복 번호를 허용하는 게 아니다 — 소라 지적.)
+-- Flyway out-of-order ON. 앞 버전 수정 금지.
 -- =============================================================
 
 -- 카드가 파생된 taxonomy 버전(어느 스냅샷 기준 topic_key 인지). 롤아웃 전 카드는 null.

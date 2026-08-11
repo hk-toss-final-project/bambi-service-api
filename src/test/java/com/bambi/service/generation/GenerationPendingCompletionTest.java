@@ -150,7 +150,7 @@ class GenerationPendingCompletionTest {
     private static PublishItem item(String requestKey, String reportType, String generationTopic,
                                     OffsetDateTime createdAt) {
         return new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), reportType, requestKey, generationTopic, createdAt);
+                List.of(), List.of(), List.of(), reportType, requestKey, generationTopic, createdAt, null, null);
     }
 
     private static GenerationPending pendingWithId(UUID id) {

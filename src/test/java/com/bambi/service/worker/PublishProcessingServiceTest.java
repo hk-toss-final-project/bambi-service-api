@@ -175,7 +175,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // 추천 매칭용 taxonomy_topic_ids + version 이 실린 스냅샷
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), null,
+                List.of(), List.of(), List.of("반도체"), null, null, null, null,
                 List.of("ai_ml", "industry"), "1.0.0-draft");
 
         service.upsert(item);
@@ -195,7 +195,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), null, List.of(), "");
+                List.of(), List.of(), List.of("반도체"), null, null, null, null, List.of(), "");
 
         service.upsert(item);   // 예외 없이 저장
 
@@ -273,7 +273,7 @@ class PublishProcessingServiceTest {
                 .thenReturn(Optional.of(existingCard));
         PublishItem published = new PublishItem(
                 "c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null);
+                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null, null, null);
 
         service.upsert(published);
 
@@ -289,7 +289,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         PublishItem published = new PublishItem(
                 "c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null);
+                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null, null, null);
 
         service.upsert(published);
 
