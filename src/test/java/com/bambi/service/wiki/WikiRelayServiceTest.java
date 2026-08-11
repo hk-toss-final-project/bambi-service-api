@@ -1,6 +1,8 @@
 package com.bambi.service.wiki;
 
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
+import com.bambi.service.wiki.dto.WikiTag;
+import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
 import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.junit.jupiter.api.DisplayName;
@@ -22,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WikiRelayServiceTest {
 
     private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
-    private final WikiRelayService service = new WikiRelayService(wikiClient);
+    private final BlockedWikiTagRepository blockedTags = mock(BlockedWikiTagRepository.class);
+    private final WikiRelayService service = new WikiRelayService(wikiClient, blockedTags);
 
     @Test
     @DisplayName("top-nodes: 범위 안 limit 은 그대로 전달한다")
@@ -79,5 +82,32 @@ class WikiRelayServiceTest {
 
         assertThat(service.reset(9L)).isSameAs(reset);
         verify(wikiClient).reset(9L);
+    }
+
+    // ---- 발견 관심사 숨기기 (V27, 2026-08-11 우석) ----------------------------
+
+    @Test
+    @DisplayName("숨긴 태그는 목록에서 빠진다 — 이름 정규화(대소문자·공백) 기준")
+    void blockedTagsAreFilteredOut() {
+        WikiTagsResponse fromAgent = new WikiTagsResponse("p", 1, "active", null, List.of(
+                new WikiTag("id-1", " AI·머신러닝 ", "topic", 0.9, 0.5, List.of(), java.util.Map.of()),
+                new WikiTag("id-2", "반도체", "topic", 0.8, 0.5, List.of(), java.util.Map.of())));
+        when(wikiClient.getTags(7L)).thenReturn(fromAgent);
+        when(blockedTags.findNamesByUserId(7L)).thenReturn(List.of("ai·머신러닝"));
+
+        WikiTagsResponse result = service.tags(7L);
+
+        assertThat(result.tags()).extracting(WikiTag::tag).containsExactly("반도체");
+    }
+
+    @Test
+    @DisplayName("숨긴 태그가 없으면 agent 응답을 그대로 통과시킨다")
+    void noBlockedTagsPassesThrough() {
+        WikiTagsResponse fromAgent = new WikiTagsResponse("p", 1, "active", null, List.of(
+                new WikiTag("id-1", "반도체", "topic", 0.8, 0.5, List.of(), java.util.Map.of())));
+        when(wikiClient.getTags(7L)).thenReturn(fromAgent);
+        when(blockedTags.findNamesByUserId(7L)).thenReturn(List.of());
+
+        assertThat(service.tags(7L)).isSameAs(fromAgent);
     }
 }

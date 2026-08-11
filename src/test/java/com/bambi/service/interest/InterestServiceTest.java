@@ -21,7 +21,10 @@ class InterestServiceTest {
     private final InterestRepository repo = mock(InterestRepository.class);
     private final InterestTaxonomyService taxonomy = mock(InterestTaxonomyService.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-    private final InterestService service = new InterestService(repo, taxonomy, events);
+    private final com.bambi.service.wiki.BlockedWikiTagRepository blockedTags =
+            mock(com.bambi.service.wiki.BlockedWikiTagRepository.class);
+    private final InterestService service =
+            new InterestService(repo, taxonomy, events, blockedTags);
 
     @Test
     void 관심사_생성시_변경_이벤트를_발행한다() {

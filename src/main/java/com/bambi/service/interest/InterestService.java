@@ -25,14 +25,17 @@ public class InterestService {
     private final InterestRepository interestRepository;
     private final InterestTaxonomyService taxonomyService;
     private final ApplicationEventPublisher eventPublisher;
+    private final com.bambi.service.wiki.BlockedWikiTagRepository blockedTagRepository;
 
     public InterestService(
             InterestRepository interestRepository,
             InterestTaxonomyService taxonomyService,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            com.bambi.service.wiki.BlockedWikiTagRepository blockedTagRepository) {
         this.interestRepository = interestRepository;
         this.taxonomyService = taxonomyService;
         this.eventPublisher = eventPublisher;
+        this.blockedTagRepository = blockedTagRepository;
     }
 
     @Transactional
@@ -51,6 +54,10 @@ public class InterestService {
                         selection.taxonomy().categoryId(),
                         selection.taxonomy().topicId());
         interestRepository.save(interest);
+        // 숨겨둔 발견 태그를 다시 관심사로 추가하면 숨김도 함께 푼다(2026-08-11) —
+        // 안 풀면 "내 관심사엔 있는데 발견 목록엔 영영 안 보이는" 어긋난 상태가 남는다.
+        blockedTagRepository.deleteByUserIdAndTagName(
+                userId, com.bambi.service.wiki.BlockedWikiTag.normalize(name));
         eventPublisher.publishEvent(new InterestChangedEvent(userId));
         return InterestResponse.from(interest);
     }
