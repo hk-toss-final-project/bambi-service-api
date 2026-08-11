@@ -2,6 +2,8 @@ package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentAcceptedJob;
+import com.bambi.service.agent.dto.AgentContentMarkDeletionRequest;
+import com.bambi.service.agent.dto.AgentContentMarkRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
@@ -47,4 +49,10 @@ public interface AgentGateway {
      * @throws com.bambi.service.common.error.ApiException agent 연결 실패/5xx 시 AGENT_UNAVAILABLE
      */
     AgentAcceptedJob relayUrlSource(long userId, AgentUrlSourceRequest request);
+
+    /** 북마크한 카드 콘텐츠를 Agent 개인 Wiki 원본으로 편입한다. */
+    AgentAcceptedJob relayContentMark(long userId, AgentContentMarkRequest request);
+
+    /** 북마크 원본 연결을 해제하고 남은 활성 원본 기준 Wiki 재구성을 요청한다. */
+    AgentAcceptedJob relayContentMarkDeletion(long userId, AgentContentMarkDeletionRequest request);
 }

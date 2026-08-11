@@ -26,7 +26,8 @@ public record UserSummary(
         String bio,
         Set<String> roles,
         String defaultCardVisibility,
-        boolean reportReadyNotification) {
+        boolean reportReadyNotification,
+        boolean changeHistoryEnabled) {
 
     public static UserSummary from(User user) {
         return new UserSummary(
@@ -38,6 +39,7 @@ public record UserSummary(
                 user.getBio(),
                 user.getRoles().stream().map(Role::getName).collect(Collectors.toSet()),
                 user.getDefaultCardVisibility(),
-                user.isReportReadyNotification());
+                user.isReportReadyNotification(),
+                user.isChangeHistoryEnabled());
     }
 }

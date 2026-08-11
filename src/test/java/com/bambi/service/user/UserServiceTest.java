@@ -105,7 +105,7 @@ class UserServiceTest {
         User user = liveUser();   // 기본값: PRIVATE / 알림 true
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest("PUBLIC", null));
+        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest("PUBLIC", null, null));
 
         assertThat(res.defaultCardVisibility()).isEqualTo("PUBLIC");
         assertThat(res.reportReadyNotification()).isTrue();   // null 미전송 → 미변경
@@ -116,7 +116,7 @@ class UserServiceTest {
         User user = liveUser();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest(null, false));
+        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest(null, false, null));
 
         assertThat(res.defaultCardVisibility()).isEqualTo("PRIVATE");   // null 미전송 → 미변경
         assertThat(res.reportReadyNotification()).isFalse();
@@ -128,11 +128,23 @@ class UserServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
         ApiException ex = catchThrowableOfType(
-                () -> service.updateSettings(1L, new UpdateSettingsRequest("BOGUS", false)),
+                () -> service.updateSettings(1L, new UpdateSettingsRequest("BOGUS", false, null)),
                 ApiException.class);
 
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
         assertThat(user.getDefaultCardVisibility()).isEqualTo("PRIVATE");   // 검증 실패 → 반영 안 됨
         assertThat(user.isReportReadyNotification()).isTrue();
+    }
+
+    @Test
+    void 설정_델타추적만_켜면_나머지는_유지된다() {
+        User user = liveUser();   // 기본값: PRIVATE / 알림 true / 델타 false
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest(null, null, true));
+
+        assertThat(res.changeHistoryEnabled()).isTrue();
+        assertThat(res.defaultCardVisibility()).isEqualTo("PRIVATE");   // null 미전송 → 미변경
+        assertThat(res.reportReadyNotification()).isTrue();
     }
 }

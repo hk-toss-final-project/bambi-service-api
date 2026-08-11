@@ -72,6 +72,11 @@ app:
     immediate-card:
       enabled: ${AGENT_IMMEDIATE_CARD_ENABLED:true}
   worker:
+    scrap-wiki:
+      enabled: ${WORKER_SCRAP_WIKI_ENABLED:true}
+      poll-interval-ms: ${WORKER_SCRAP_WIKI_POLL_INTERVAL_MS:3000}
+      initial-delay-ms: ${WORKER_SCRAP_WIKI_INITIAL_DELAY_MS:5000}
+      batch-limit: ${WORKER_SCRAP_WIKI_BATCH_LIMIT:20}
     job-status:
       enabled: ${WORKER_JOB_STATUS_ENABLED:true}
       poll-interval-ms: ${WORKER_JOB_STATUS_POLL_INTERVAL_MS:5000}

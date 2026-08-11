@@ -42,12 +42,13 @@ public class OnDemandGenerationController {
      * 요청 body 는 optional — {@code {topic}} 이 오면 사용자 선택 주제(관심사 원자 반영),
      * 없으면 기존처럼 대표 관심사 자동(하위호환, 2026-08-06 계약).
      *
-     * <p>{@code changeHistoryEnabled: true} 를 함께 보내면 변경점(Delta) 추적 보고서로 만든다
-     * (agent-api #12 김기용). 생략하면 꺼짐이라 <b>기존 호출자의 동작은 바뀌지 않는다.</b>
+     * <p>변경점(Delta) 추적은 요청 body 가 아니라 <b>계정 설정</b>이다(2026-08-10 김기용 —
+     * {@code PATCH /api/users/me/settings} 의 {@code changeHistoryEnabled}). 어떤 주제를 요청하든
+     * 서비스가 저장된 설정값을 읽어 싣는다. 과거 body 의 {@code changeHistoryEnabled} 필드는
+     * 제거했다 — 프론트가 보낸 적이 없어(전송 코드 0곳 실측) 하위호환 영향이 없다.
      *
      * <p>{@code interestTagId} 를 보내면 관심사 깊게 파기(범주 리포트)로 만든다(2026-08-10 우석·기용).
-     * 루트 주제는 agent 가 해당 관심사에서 정하므로 {@code topic} 과 배타이고, Delta 조합은
-     * 계약 미정의라 거절한다 — 조용히 한쪽을 무시하면 사용자는 "켰는데 안 먹었다"를 겪는다.
+     * 루트 주제는 agent 가 해당 관심사에서 정하므로 {@code topic} 과 배타다(400).
      */
     @PostMapping("/generate")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -55,17 +56,16 @@ public class OnDemandGenerationController {
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestBody(required = false) @Valid GenerationTriggerRequest request) {
         String topic = request != null ? request.normalizedTopic() : null;
-        boolean changeHistory = request != null && request.wantsChangeHistory();
         if (request != null && request.wantsDeepDive()) {
-            if (topic != null || changeHistory) {
+            if (topic != null) {
                 throw new ApiException(ErrorCode.VALIDATION_ERROR,
-                        "깊게 파기는 관심사 선택만 받습니다. topic·changeHistoryEnabled 는 함께 보낼 수 없습니다.");
+                        "깊게 파기는 관심사 선택만 받습니다. topic 은 함께 보낼 수 없습니다.");
             }
             return ApiResponse.ok(onDemandGenerationService.generateBundleForUser(
                     principal.id(), request.normalizedInterestTagId()));
         }
         return ApiResponse.ok(
-                onDemandGenerationService.generateForUser(principal.id(), topic, changeHistory));
+                onDemandGenerationService.generateForUser(principal.id(), topic));
     }
 
     /**

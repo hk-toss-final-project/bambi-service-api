@@ -29,13 +29,16 @@ public class ScrapService {
     private final ScrapRepository scrapRepository;
     private final CardRepository cardRepository;
     private final UserRepository userRepository;
+    private final ScrapWikiOutboxService wikiOutbox;
 
     public ScrapService(ScrapRepository scrapRepository,
                         CardRepository cardRepository,
-                        UserRepository userRepository) {
+                        UserRepository userRepository,
+                        ScrapWikiOutboxService wikiOutbox) {
         this.scrapRepository = scrapRepository;
         this.cardRepository = cardRepository;
         this.userRepository = userRepository;
+        this.wikiOutbox = wikiOutbox;
     }
 
     @Transactional
@@ -45,7 +48,10 @@ public class ScrapService {
         if (!PUBLIC.equals(card.getVisibility())) {
             throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
         }
-        scrapRepository.insertIgnore(userId, card.getId());   // 멱등
+        int inserted = scrapRepository.insertIgnore(userId, card.getId());   // 멱등
+        if (inserted == 1 && hasExternalContent(card)) {
+            wikiOutbox.enqueueAdd(userId, card.getId(), card.getExternalContentId());
+        }
         return new ScrapResponse(true);
     }
 
@@ -54,7 +60,10 @@ public class ScrapService {
         // 취소는 PUBLIC 검사를 하지 않는다: 담은 뒤 소유자가 비공개로 바꿔도 취소할 수 있어야 한다.
         // deleteRelation 은 없어도 0건이라 멱등하게 안전하다.
         Card card = resolveAliveCard(cardPublicId);
-        scrapRepository.deleteRelation(userId, card.getId());
+        int deleted = scrapRepository.deleteRelation(userId, card.getId());
+        if (deleted == 1 && hasExternalContent(card)) {
+            wikiOutbox.enqueueRemove(userId, card.getId(), card.getExternalContentId());
+        }
         return new ScrapResponse(false);
     }
 
@@ -83,5 +92,9 @@ public class ScrapService {
         }
         return cardRepository.findByPublicIdAndDeletedAtIsNull(uuid)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다."));
+    }
+
+    private boolean hasExternalContent(Card card) {
+        return card.getExternalContentId() != null && !card.getExternalContentId().isBlank();
     }
 }

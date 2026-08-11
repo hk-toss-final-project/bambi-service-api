@@ -205,6 +205,10 @@ public class Card {
         return externalVersion;
     }
 
+    public String getExternalContentId() {
+        return externalContentId;
+    }
+
     public Long getReportId() {
         return reportId;
     }

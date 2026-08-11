@@ -60,6 +60,12 @@ public class User {
     @Column(name = "report_ready_notification", nullable = false)
     private boolean reportReadyNotification = true;
 
+    // 변경점(Delta) 추적 계정 설정(V22, 김기용 08-10). 요청 단위 토글을 대체한다 —
+    // true 면 온디맨드 생성에 change_history_enabled 를 싣는다. 초기값 false 는 DB DEFAULT 와 일치
+    // (델타는 LLM 호출이 많은 경로라 명시적 opt-in).
+    @Column(name = "change_history_enabled", nullable = false)
+    private boolean changeHistoryEnabled = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -131,6 +137,10 @@ public class User {
         return reportReadyNotification;
     }
 
+    public boolean isChangeHistoryEnabled() {
+        return changeHistoryEnabled;
+    }
+
     /**
      * 프로필 편집(PUT /api/users/me). username 유일성 검증은 서비스 책임 —
      * 여기서는 값 반영만 한다. null username 은 "핸들 미설정 유지"가 아니라
@@ -157,12 +167,16 @@ public class User {
      * 사용자 설정 부분 변경(PATCH) — null 인 항목은 변경하지 않는다.
      * defaultCardVisibility 값 검증(PRIVATE/PUBLIC)은 서비스 책임.
      */
-    public void updateSettings(String defaultCardVisibility, Boolean reportReadyNotification) {
+    public void updateSettings(String defaultCardVisibility, Boolean reportReadyNotification,
+                               Boolean changeHistoryEnabled) {
         if (defaultCardVisibility != null) {
             this.defaultCardVisibility = defaultCardVisibility;
         }
         if (reportReadyNotification != null) {
             this.reportReadyNotification = reportReadyNotification;
+        }
+        if (changeHistoryEnabled != null) {
+            this.changeHistoryEnabled = changeHistoryEnabled;
         }
     }
 

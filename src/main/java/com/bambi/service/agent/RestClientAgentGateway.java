@@ -3,6 +3,8 @@ package com.bambi.service.agent;
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentContentMarkDeletionRequest;
+import com.bambi.service.agent.dto.AgentContentMarkRequest;
 import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -125,6 +127,22 @@ public class RestClientAgentGateway implements AgentGateway {
     @Override
     public AgentAcceptedJob relayUrlSource(long userId, AgentUrlSourceRequest request) {
         return postWikiSource(userId, "/wiki-sources/urls", request, "agent URL 중계 실패");
+    }
+
+    @Override
+    public AgentAcceptedJob relayContentMark(long userId, AgentContentMarkRequest request) {
+        return postWikiSource(
+                userId, "/wiki-sources/content-marks", request, "agent 북마크 편입 실패");
+    }
+
+    @Override
+    public AgentAcceptedJob relayContentMarkDeletion(
+            long userId, AgentContentMarkDeletionRequest request) {
+        return postWikiSource(
+                userId,
+                "/wiki-sources/content-marks/deletions",
+                request,
+                "agent 북마크 해제 실패");
     }
 
     /**

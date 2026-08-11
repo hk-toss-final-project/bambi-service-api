@@ -36,8 +36,19 @@ class OnDemandGenerationServiceTest {
     private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
     private final com.bambi.service.interest.InterestService interestService =
             mock(com.bambi.service.interest.InterestService.class);
+    // 계정 Delta 설정 조회용(V22). 기본 mock 은 Optional.empty → 설정 없음 = Delta 꺼짐.
+    private final com.bambi.service.user.UserRepository userRepository =
+            mock(com.bambi.service.user.UserRepository.class);
     private final OnDemandGenerationService service = new OnDemandGenerationService(
-            generationClient, wikiClient, pendingService, interestService, "interest_news_card");
+            generationClient, wikiClient, pendingService, interestService, userRepository,
+            "interest_news_card");
+
+    /** 계정 Delta 설정이 주어진 사용자 — findById mock 용. */
+    private static com.bambi.service.user.User userWithDelta(boolean enabled) {
+        com.bambi.service.user.User user = new com.bambi.service.user.User("u@bambi.test", "hash", "유저");
+        user.updateSettings(null, null, enabled);
+        return user;
+    }
 
     /** 앞쪽 태그일수록 score 를 높게 → 대표 관심사 = names[0]. */
     private static WikiTagsResponse tagsWith(String... names) {
@@ -242,30 +253,23 @@ class OnDemandGenerationServiceTest {
     }
 
     @Test
-    @DisplayName("Delta 를 켜면 change_history_enabled 를 실어 보낸다")
-    void deltaOnSendsFlag() {
+    @DisplayName("계정 설정이 켜져 있으면 change_history_enabled 를 실어 보낸다 (V22)")
+    void accountDeltaOnSendsFlag() {
+        when(userRepository.findById(28L)).thenReturn(java.util.Optional.of(userWithDelta(true)));
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
-        service.generateForUser(28L, null, true);
+        service.generateForUser(28L, null);
 
-        assertThat(capture().changeHistoryEnabled()).isTrue();
+        GenerationRequest sent = capture();
+        assertThat(sent.changeHistoryEnabled()).isTrue();
+        assertThat(sent.idempotencyKey()).endsWith("-delta");
     }
 
     @Test
-    @DisplayName("Delta 를 끄면 플래그를 아예 싣지 않는다 — 기존 요청과 동일")
-    void deltaOffOmitsFlag() {
-        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
-        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
-
-        service.generateForUser(28L, null, false);
-
-        assertThat(capture().changeHistoryEnabled()).isNull();
-    }
-
-    @Test
-    @DisplayName("인자 2개짜리 기존 호출은 Delta 가 꺼진 채로 동작한다(회귀 방지)")
-    void legacyOverloadKeepsDeltaOff() {
+    @DisplayName("계정 설정이 꺼져 있으면 플래그를 아예 싣지 않는다 — 기존 요청과 동일")
+    void accountDeltaOffOmitsFlag() {
+        when(userRepository.findById(28L)).thenReturn(java.util.Optional.of(userWithDelta(false)));
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
@@ -278,13 +282,28 @@ class OnDemandGenerationServiceTest {
     }
 
     @Test
-    @DisplayName("같은 분에 토글해도 멱등키가 갈려 각각 새 Job 이 된다")
-    void deltaGetsItsOwnIdempotencyKey() {
+    @DisplayName("사용자 조회가 비면(탈퇴 등) Delta 는 꺼진 것으로 다룬다 — 비용 큰 경로 임의 활성 금지")
+    void missingUserDefaultsDeltaOff() {
+        // userRepository 기본 mock = Optional.empty
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
-        service.generateForUser(28L, null, false);
-        service.generateForUser(28L, null, true);
+        service.generateForUser(28L, null);
+
+        assertThat(capture().changeHistoryEnabled()).isNull();
+    }
+
+    @Test
+    @DisplayName("같은 분에 설정을 바꿔 다시 요청해도 멱등키가 갈려 각각 새 Job 이 된다")
+    void deltaGetsItsOwnIdempotencyKey() {
+        when(userRepository.findById(28L)).thenReturn(
+                java.util.Optional.of(userWithDelta(false)),
+                java.util.Optional.of(userWithDelta(true)));
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, null);
+        service.generateForUser(28L, null);
 
         ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
         verify(generationClient, org.mockito.Mockito.times(2))

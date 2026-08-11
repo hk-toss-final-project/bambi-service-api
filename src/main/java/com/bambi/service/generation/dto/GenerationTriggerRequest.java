@@ -12,7 +12,6 @@ import jakarta.validation.constraints.Size;
  */
 public record GenerationTriggerRequest(
         @Size(max = 100) String topic,
-        Boolean changeHistoryEnabled,
         @Size(max = 64) String interestTagId) {
 
     /** 정규화된 topic — 앞뒤 공백 제거, 비어 있으면 null(대표 관심사 자동 선택 신호). */
@@ -24,19 +23,14 @@ public record GenerationTriggerRequest(
     }
 
     /**
-     * 변경점(Delta) 추적 요청 여부 (agent-api #12 김기용). 생략하면 꺼짐 —
-     * <b>기존 호출자는 이 필드를 모르므로 기본이 꺼짐이어야 동작이 안 바뀐다.</b>
-     */
-    public boolean wantsChangeHistory() {
-        return Boolean.TRUE.equals(changeHistoryEnabled);
-    }
-
-    /**
      * 관심사 깊게 파기(범주 리포트) 요청 여부 (2026-08-10 우석·기용). {@code interestTagId} =
      * {@code GET /api/wiki/tags} 의 {@code tagId}. 생략하면 기존 온디맨드 경로 그대로다.
      *
-     * <p>topic·Delta 와 조합 규칙은 컨트롤러가 검증한다 — 깊게 파기는 루트를 agent 가 정하므로
-     * topic 과 배타이고, Delta 조합은 계약에 정의가 없어 거절한다.
+     * <p>topic 과의 배타는 컨트롤러가 검증한다 — 깊게 파기는 루트를 agent 가 정한다.
+     *
+     * <p>변경점(Delta) 추적 필드는 여기서 <b>제거됐다</b>(2026-08-10 김기용 — 계정 설정
+     * {@code users.change_history_enabled} 로 전환). 프론트 전송 코드가 0곳이라 하위호환 영향 없음.
+     * 미지의 필드는 Jackson 이 무시하므로 옛 body 를 보내도 400 이 아니라 "설정값 우선"으로 동작한다.
      */
     public boolean wantsDeepDive() {
         return interestTagId != null && !interestTagId.isBlank();

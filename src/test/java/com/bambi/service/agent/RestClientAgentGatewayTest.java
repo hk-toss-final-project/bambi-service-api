@@ -3,6 +3,8 @@ package com.bambi.service.agent;
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentContentMarkDeletionRequest;
+import com.bambi.service.agent.dto.AgentContentMarkRequest;
 import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.bambi.service.common.error.ApiException;
@@ -41,6 +43,8 @@ class RestClientAgentGatewayTest {
     private static final String CONTEXT_URL = "http://agent.local/internal/v1/users/7/context";
     private static final String CLIPPING_URL = "http://agent.local/internal/v1/users/7/wiki-sources/clippings";
     private static final String URL_SOURCE_URL = "http://agent.local/internal/v1/users/7/wiki-sources/urls";
+    private static final String CONTENT_MARK_URL = "http://agent.local/internal/v1/users/7/wiki-sources/content-marks";
+    private static final String CONTENT_MARK_DELETE_URL = CONTENT_MARK_URL + "/deletions";
     private static final String TAXONOMY_URL = "http://agent.local/internal/v1/interest-taxonomies/1.0.0";
 
     private MockRestServiceServer server;
@@ -184,5 +188,40 @@ class RestClientAgentGatewayTest {
         assertThat(accepted.jobId()).isEqualTo("j-2");
         verify(callLogger).logRequest(eq(7L), eq("/internal/v1/users/7/wiki-sources/urls"), any());
         verify(callLogger).logResponse(eq(1L), eq(202), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("카드 북마크는 content-marks 경로로 POST한다")
+    void relayContentMarkAcceptsAsync() {
+        server.expect(requestTo(CONTENT_MARK_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .body("{\"job_id\":\"j-3\",\"status\":\"queued\","
+                                + "\"source_document_id\":\"source-1\"}")
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        AgentAcceptedJob accepted = gateway.relayContentMark(
+                7, new AgentContentMarkRequest("scrap-add-1", "content-1"));
+
+        server.verify();
+        assertThat(accepted.jobId()).isEqualTo("j-3");
+        assertThat(accepted.sourceDocumentId()).isEqualTo("source-1");
+    }
+
+    @Test
+    @DisplayName("카드 북마크 해제는 content-marks/deletions 경로로 POST한다")
+    void relayContentMarkDeletionAcceptsAsync() {
+        server.expect(requestTo(CONTENT_MARK_DELETE_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .body("{\"job_id\":\"j-4\",\"status\":\"queued\"}")
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        AgentAcceptedJob accepted = gateway.relayContentMarkDeletion(
+                7, new AgentContentMarkDeletionRequest(
+                        "scrap-remove-1", "scrap-add-1", "content-1"));
+
+        server.verify();
+        assertThat(accepted.jobId()).isEqualTo("j-4");
     }
 }

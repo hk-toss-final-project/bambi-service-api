@@ -5,6 +5,8 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.generation.dto.GenerationTriggerResponse;
 import com.bambi.service.interest.InterestService;
+import com.bambi.service.user.User;
+import com.bambi.service.user.UserRepository;
 import com.bambi.service.wiki.AgentWikiClient;
 import com.bambi.service.wiki.dto.WikiTag;
 import org.slf4j.Logger;
@@ -44,6 +46,7 @@ public class OnDemandGenerationService {
     private final AgentWikiClient wikiClient;
     private final GenerationPendingService pendingService;
     private final InterestService interestService;
+    private final UserRepository userRepository;
     private final String contentType;
 
     public OnDemandGenerationService(
@@ -51,11 +54,13 @@ public class OnDemandGenerationService {
             AgentWikiClient wikiClient,
             GenerationPendingService pendingService,
             InterestService interestService,
+            UserRepository userRepository,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
         this.wikiClient = wikiClient;
         this.pendingService = pendingService;
         this.interestService = interestService;
+        this.userRepository = userRepository;
         this.contentType = contentType;
     }
 
@@ -73,22 +78,15 @@ public class OnDemandGenerationService {
      * <p>응답 키 id 는 service 발급이라 항상 보장, agentJobId 는 agent 식별자(파싱 실패 시 null 가능).
      */
     public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
-        return generateForUser(userId, requestedTopic, false);
-    }
-
-    /**
-     * 변경점(Delta) 추적을 선택할 수 있는 즉시 생성 (agent-api #12 김기용).
-     *
-     * <p>{@code changeHistory} 를 켜면 agent 가 <b>직전 보고서 이후의 신규·갱신 사실만 갈라</b>
-     * 통합 보고서를 만든다. 끄면 지금까지와 완전히 동일하게 동작한다 — 요청 본문에서
-     * 필드 자체가 빠지므로 회귀가 없다.
-     *
-     * <p><b>아침 브리핑에는 쓰지 않는다.</b> Delta 도 "기존 생성 경로를 대체"라서, 같은 성격의
-     * {@code topics[]}(2026-08-07 계약)와 동시에 켜면 어느 쪽이 이기는지 계약에 정의가 없다.
-     */
-    public GenerationTriggerResponse generateForUser(long userId, String requestedTopic,
-                                                     boolean changeHistory) {
         String topic = resolveTopic(userId, requestedTopic);
+        // 변경점(Delta) 추적은 요청 단위 토글이 아니라 **계정 설정**이다(2026-08-10 김기용 요청,
+        // users.change_history_enabled V22). 어떤 주제를 요청하든 저장된 설정값을 그대로 싣는다 —
+        // 처음 요청하는 주제는 비교할 과거가 없어 "전부 신규"로 나오고 두 번째부터 전/후 비교가 된다
+        // (토픽별 과거 누적 구조라 계정 단위로 켜도 데이터가 안 꼬인다 — 기용 확인).
+        //
+        // 아침 브리핑에는 여전히 싣지 않는다 — Delta 와 topics[] 둘 다 "기존 생성 경로 대체"라
+        // 동시 사용 시 어느 쪽이 이기는지 계약에 정의가 없다(agent-api #12 / #20).
+        boolean changeHistory = accountChangeHistoryEnabled(userId);
         // report_type 을 요청에 실어 agent 가 발행 snapshot 에 에코하게 한다(2026-08-06 계약).
         // 온디맨드는 아직 단일 주제다 — topic 이 실제 검색어다(고정 문구를 넣으면 안 된다).
         // 상위 3개 자동 선정 + 연결 분석 전환은 agent 통합 서술이 나온 뒤 별도 작업.
@@ -104,6 +102,14 @@ public class OnDemandGenerationService {
         log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, delta={}, idempotencyKey={}, id={}, agentJobId={}",
                 userId, topic, changeHistory, request.idempotencyKey(), id, agentJobId);
         return GenerationTriggerResponse.accepted(id, agentJobId);
+    }
+
+    /**
+     * 계정의 Delta 설정 조회 — 탈퇴/미존재 사용자는 꺼짐으로 다룬다(생성 요청을 막을 이유는
+     * 인증 계층이 이미 처리했고, 여기서는 비용 큰 경로를 임의로 켜지 않는 쪽이 안전하다).
+     */
+    private boolean accountChangeHistoryEnabled(long userId) {
+        return userRepository.findById(userId).map(User::isChangeHistoryEnabled).orElse(false);
     }
 
     /**

@@ -66,7 +66,7 @@ public class UserService {
             throw new ApiException(ErrorCode.VALIDATION_ERROR,
                     "기본 공개범위는 PRIVATE 또는 PUBLIC 이어야 합니다.");
         }
-        user.updateSettings(visibility, req.reportReadyNotification());
+        user.updateSettings(visibility, req.reportReadyNotification(), req.changeHistoryEnabled());
         return UserSummary.from(user);
     }
 
