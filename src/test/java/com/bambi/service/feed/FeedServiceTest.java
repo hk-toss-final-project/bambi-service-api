@@ -337,4 +337,59 @@ class FeedServiceTest {
         assertThat(notFound.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);
         assertThat(broken.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);   // 존재/형식 구분 노출 없음
     }
+
+    // ---- 공개 피드 랭킹 (2026-08-11 우석) --------------------------------------
+
+    /** 랭킹 테스트용 카드 — 좋아요 수·생성 시각·매칭을 조합해 순서를 검증한다. */
+    private Card rankCard(long id, java.time.OffsetDateTime createdAt, Set<String> topicIds) {
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(id);
+        when(card.getUserId()).thenReturn(2L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(card.getTaxonomyTopicIds()).thenReturn(topicIds);
+        when(card.getCreatedAt()).thenReturn(createdAt);
+        return card;
+    }
+
+    @Test
+    void 랭킹_관심사가_맞는_오래된_카드가_무관한_최신_카드보다_위다() {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        Card fresh = rankCard(10L, now, Set.of("data_cloud"));          // 최신·비매칭
+        Card matched = rankCard(11L, now.minusDays(5), Set.of("ai_ml")); // 오래됨·매칭
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(fresh, matched));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of("ai_ml"));
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveUnlinkedNames(1L)).thenReturn(List.of());
+        when(cardRepository.findLikedCardTopicIds(1L)).thenReturn(List.of());
+        when(cardRepository.findScrappedCardTopicIds(1L)).thenReturn(List.of());
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        // 관심 매칭(+100)이 신선도(+30)를 이긴다 — "내 관심사 먼저"
+        assertThat(feed.get(0).matchedTopics()).isNotEmpty();
+    }
+
+    @Test
+    void 랭킹_게스트는_최신순_그대로다() {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        Card first = rankCard(20L, now, Set.of("ai_ml"));
+        Card second = rankCard(21L, now.minusDays(1), Set.of("ai_ml"));
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(first, second));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+
+        List<PublicCardResponse> feed = service.publicFeed(null, false, 20);
+
+        // 게스트는 개인화 근거가 없다 → 서버가 준 최신순을 흔들지 않는다
+        assertThat(feed).hasSize(2);
+        verify(interestRepository, never()).findActiveTopicIds(any());
+    }
 }

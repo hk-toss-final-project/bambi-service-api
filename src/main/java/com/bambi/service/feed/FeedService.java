@@ -21,7 +21,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -79,6 +81,13 @@ public class FeedService {
 
     private static final Matched EMPTY_MATCHED = new Matched(List.of(), List.of());
 
+    /**
+     * 랭킹 후보 풀 상한 — 최신순으로 이만큼 읽어 점수로 추린다.
+     * 넓힐수록 관심사 매칭이 잘 걸리지만 like/scrap/author 배치 조회 대상도 같이 커진다.
+     * 지금 전체 공개 카드가 100건 안팎이라 60이면 사실상 전량을 본다.
+     */
+    private static final int RANKING_POOL_SIZE = 60;
+
     @Transactional(readOnly = true)
     public List<CardResponse> myFeed(Long userId) {
         List<Card> cards = cardRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
@@ -112,7 +121,15 @@ public class FeedService {
      */
     @Transactional(readOnly = true)
     public List<PublicCardResponse> publicFeed(Long viewerId, boolean followingOnly, int limit) {
-        Pageable page = PageRequest.of(0, clampLimit(limit));
+        int size = clampLimit(limit);
+        /*
+          랭킹을 하려면 **후보를 화면 개수보다 넓게** 읽어야 한다(2026-08-11 우석).
+          최신 20건만 읽어 그 안에서 정렬하면, 조금 오래됐지만 내 관심사에 딱 맞는 카드는
+          애초에 후보에 못 들어와 영영 안 보인다. 최신순 상위 N 을 읽어 점수로 추린다.
+          팔로잉 스코프는 랭킹을 안 하므로 넓힐 이유가 없다(그대로 화면 개수만).
+        */
+        int poolSize = followingOnly ? size : Math.min(RANKING_POOL_SIZE, Math.max(size * 3, size));
+        Pageable page = PageRequest.of(0, poolSize);
 
         List<Card> cards;
         if (followingOnly) {
@@ -151,7 +168,7 @@ public class FeedService {
         // ⑤ 추천 매칭 (뷰어 관심 topic/category ∩ 카드 topic) — 뷰어 관심/taxonomy 각 1회 조회, 카드별 재조회 없음
         Map<Long, Matched> matched = matchedByCard(viewerId, cards);
 
-        return cards.stream()
+        List<PublicCardResponse> responses = cards.stream()
                 .map(card -> {
                     Matched m = matched.getOrDefault(card.getId(), EMPTY_MATCHED);
                     return PublicCardResponse.from(
@@ -164,6 +181,69 @@ public class FeedService {
                             m.categories());
                 })
                 .toList();
+
+        // 팔로잉 스코프는 "그 사람 글을 시간순으로" 보는 화면이라 랭킹을 적용하지 않는다.
+        if (followingOnly) {
+            return responses;
+        }
+        // 넓게 읽은 후보를 점수로 정렬한 뒤 화면 개수로 자른다.
+        return rankForViewer(responses, viewerId).stream().limit(size).toList();
+    }
+
+    /**
+     * 공개 피드 랭킹 (2026-08-11 우석 — "매번 같은 목록만 나온다").
+     *
+     * <p>그동안 서버는 최신순만 내려주고 프론트는 "순서는 서버가 정한다"고 믿어 재정렬을 하지 않아
+     * <b>아무도 순위를 매기지 않는 상태</b>였다. 그래서 새 카드가 안 생기면 화면이 그대로였다.
+     * 여기서 점수를 매겨 관심사·인기 카드가 위로 오게 한다.
+     *
+     * <p>점수(높을수록 위):
+     * <ul>
+     *   <li><b>관심 매칭</b> — topic 일치 +100, category 일치 +40 (정밀 매칭을 확실히 앞세운다)
+     *   <li><b>인기</b> — 좋아요 수 × 8, 상한 +40 (인기 카드가 관심사를 이기지는 못하게)
+     *   <li><b>신선도</b> — 24시간 이내 +30, 3일 이내 +15 (오래된 인기글이 상단을 점유하지 않게)
+     *   <li><b>이미 본 것</b> — 좋아요·스크랩한 카드는 −60 (본 걸 또 위에 놓지 않는다)
+     * </ul>
+     *
+     * <p><b>같은 입력이면 같은 결과다(결정적)</b> — 무작위 셔플은 넣지 않는다. 새로고침마다 순서가
+     * 흔들리면 "아까 본 카드가 어디 갔지"가 되기 때문이다. 대신 좋아요·스크랩이라는 <b>행동</b>이
+     * 다음 조회의 순서를 바꾼다(읽은 건 내려가고, 그 주제는 matched 로 올라온다).
+     * 동점은 최신순으로 갈라 순서가 임의로 흔들리지 않게 한다.
+     */
+    private List<PublicCardResponse> rankForViewer(List<PublicCardResponse> cards, Long viewerId) {
+        if (viewerId == null || cards.size() <= 1) {
+            return cards;   // 게스트는 개인화 근거가 없다 → 최신순 그대로
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        return cards.stream()
+                .sorted(Comparator
+                        .comparingInt((PublicCardResponse card) -> -score(card, now))
+                        .thenComparing(PublicCardResponse::createdAt,
+                                Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+    }
+
+    /** 랭킹 점수 — 규칙은 {@link #rankForViewer} 문서 참조. */
+    private int score(PublicCardResponse card, OffsetDateTime now) {
+        int score = 0;
+        if (!card.matchedTopics().isEmpty()) {
+            score += 100;
+        } else if (!card.matchedCategories().isEmpty()) {
+            score += 40;
+        }
+        score += (int) Math.min(40, card.likeCount() * 8);
+        if (card.createdAt() != null) {
+            long hours = java.time.Duration.between(card.createdAt(), now).toHours();
+            if (hours <= 24) {
+                score += 30;
+            } else if (hours <= 72) {
+                score += 15;
+            }
+        }
+        if (card.liked() || card.scrapped()) {
+            score -= 60;
+        }
+        return score;
     }
 
     /**
