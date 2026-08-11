@@ -3,6 +3,7 @@ package com.bambi.service.wiki;
 import com.bambi.service.agent.AgentErrors;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
@@ -39,6 +40,19 @@ public class AgentWikiClient {
     /** 활성 관심 태그. 아직 없으면(agent 404) 빈 목록으로 돌려준다. */
     public WikiTagsResponse getTags(long userId) {
         return getOrEmpty("/users/" + userId + "/interests", WikiTagsResponse.class, WikiTagsResponse.empty());
+    }
+
+    /**
+     * 아침 브리핑에 쓸 주제 — agent 가 개인 Wiki 맥락을 읽어 고른다 (2026-08-11 계약).
+     *
+     * <p>위키가 없는 사용자는 agent 가 404 를 준다. 그건 오류가 아니라 <b>정상 상태</b>라
+     * 빈 결과로 바꿔 돌려주고, 호출부가 등록 관심사 폴백으로 넘어간다({@code getTags} 와 같은 정책).
+     *
+     * @param limit agent 계약상 1~5
+     */
+    public BriefingTopicsSelection getBriefingTopics(long userId, int limit) {
+        return getOrEmpty("/users/" + userId + "/briefing-topics?limit=" + limit,
+                BriefingTopicsSelection.class, BriefingTopicsSelection.empty());
     }
 
     /** 개인 Wiki 문서 목록(내부 schema 문서 포함 — 제외는 서비스가 한다). */

@@ -4,6 +4,8 @@ import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.interest.InterestService;
 import com.bambi.service.interest.dto.InterestResponse;
+import com.bambi.service.wiki.AgentWikiClient;
+import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -29,7 +31,9 @@ class BriefingTopicServiceTest {
 
     private final BriefingTopicRepository repository = mock(BriefingTopicRepository.class);
     private final InterestService interestService = mock(InterestService.class);
-    private final BriefingTopicService service = new BriefingTopicService(repository, interestService);
+    private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
+    private final BriefingTopicService service =
+            new BriefingTopicService(repository, interestService, wikiClient);
 
     @Test
     void 선택값을_position_순서대로_이름만_돌려준다() {
@@ -134,34 +138,72 @@ class BriefingTopicServiceTest {
                 .containsExactly("폭염", "퇴근");
     }
 
-    // ---- 폴백 3단계 (2026-08-08, 황유림 지적) ----------------------------------
+    // ---- 폴백 2단계 (2026-08-11 (B) 확정) --------------------------------------
 
     @Test
-    void 고른_주제가_있으면_그대로_쓴다() {
-        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of(
-                new BriefingTopic(1L, 0, "폭염"),
-                new BriefingTopic(1L, 1, "퇴근")));
+    void agent_가_고른_주제를_그대로_쓴다() {
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of("코스닥", "폭염")));
 
-        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("폭염", "퇴근");
-        verifyNoInteractions(interestService);   // 고른 게 있으면 폴백을 조회하지도 않는다
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("코스닥", "폭염");
+        verifyNoInteractions(interestService);   // agent 가 골랐으면 폴백을 조회하지도 않는다
     }
 
     @Test
-    void 고른_주제가_없으면_등록_관심사로_폴백한다() {
-        // 선택 화면이 나오기 전에는 고른 사람이 아무도 없다. 폴백이 없으면 아침이 전면 중단된다.
-        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of());
+    void 사용자_선택은_더_이상_보지_않는다() {
+        // 08-11 (B) 확정 — 선택 화면이 제거됐다. UI 있던 사이 저장한 값이 남아 있어도 무시한다.
+        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of(
+                new BriefingTopic(1L, 0, "옛날에 고른 주제")));
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of("코스닥")));
+
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("코스닥");
+    }
+
+    @Test
+    void agent_가_빈_목록을_주면_등록_관심사로_폴백한다() {
+        // 위키가 없는 신규 사용자. 폴백이 없으면 그 사용자는 아침을 영영 못 받는다.
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of()));
         when(interestService.list(1L)).thenReturn(List.of(
                 interest("퇴근"), interest("기후·환경"), interest("웹툰·애니"), interest("사회·노동")));
 
-        // 최근 3개까지만 — Wiki 태그가 아니라 사용자가 직접 고른 값이라 파편이 안 섞인다.
         assertThat(service.resolveForMorningBriefing(1L))
-                .containsExactly("퇴근", "기후·환경", "웹툰·애니");
+                .containsExactly("퇴근", "기후·환경", "웹툰·애니");   // 최근 3개까지만
+    }
+
+    @Test
+    void agent_호출이_실패해도_등록_관심사로_폴백한다() {
+        // 스케줄러는 전체 사용자를 도는 배치다. 여기서 예외가 올라가면 그날 아침이 통째로 날아간다.
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenThrow(new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 장애"));
+        when(interestService.list(1L)).thenReturn(List.of(interest("퇴근")));
+
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("퇴근");
+    }
+
+    @Test
+    void agent_가_상한을_넘겨_주면_앞에서_자른다() {
+        // 개수는 agent 계약(limit)이 지키지만, 계약이 바뀌어도 요청이 커지지 않게 여기서도 막는다.
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of("하나", "둘", "셋", "넷")));
+
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("하나", "둘", "셋");
+    }
+
+    @Test
+    void agent_응답의_공백과_빈_주제는_거른다() {
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(java.util.Arrays.asList("  코스닥 ", "", null, "  ")));
+
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("코스닥");
     }
 
     @Test
     void 둘_다_없으면_빈_목록이다() {
         // 호출부가 이걸 보고 요청 자체를 건너뛴다 — 제목용 고정 문구가 검색어로 되살아나면 안 된다.
-        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of());
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of()));
         when(interestService.list(1L)).thenReturn(List.of());
 
         assertThat(service.resolveForMorningBriefing(1L)).isEmpty();
@@ -169,11 +211,16 @@ class BriefingTopicServiceTest {
 
     @Test
     void 폴백에서_이름이_비었거나_null_인_관심사는_거른다() {
-        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of());
+        when(wikiClient.getBriefingTopics(1L, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of()));
         when(interestService.list(1L)).thenReturn(java.util.Arrays.asList(
                 interest("  "), interest("폭염"), interest(null)));
 
         assertThat(service.resolveForMorningBriefing(1L)).containsExactly("폭염");
+    }
+
+    private static BriefingTopicsSelection selection(List<String> topics) {
+        return new BriefingTopicsSelection(topics, "테스트 근거", topics.size());
     }
 
     private static InterestResponse interest(String name) {

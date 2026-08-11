@@ -4,6 +4,10 @@ import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.interest.InterestService;
 import com.bambi.service.interest.dto.InterestResponse;
+import com.bambi.service.wiki.AgentWikiClient;
+import com.bambi.service.wiki.dto.BriefingTopicsSelection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,14 +16,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * 아침 브리핑용 사용자 선택 관심사 (2026-08-07 저녁 송우·기용 확정).
+ * 아침 브리핑 주제 결정 (2026-08-11 (B) 확정).
  *
- * <p>아침 브리핑은 사용자가 미리 고른 관심사 3개로 만들어진다. 여기 저장된 이름이
- * agent 요청의 {@code topics[]} 로 그대로 나간다 — 변환이 없다.
+ * <p>주제는 <b>agent 가 개인 Wiki 맥락을 읽어 고른다.</b> 고른 이름이 agent 요청의
+ * {@code topics[]} 로 그대로 나간다 — 변환이 없다.
  *
- * <p><b>미선택(빈 목록)은 정상 상태다.</b> 선택 화면을 아직 안 봤거나 선택을 해제한
- * 사용자가 여기 해당한다. 그때 아침 브리핑은 등록 관심사로 폴백한다
- * (agent-api #20 폴백 3단계) — 발행이 멈추지 않는다.
+ * <p><b>사용자 선택 저장소({@link #get}·{@link #replace}, {@code user_briefing_topics})는
+ * 호출부 없이 남아 있다.</b> 08-11 에 아침 주제를 사용자가 고르지 않기로 확정하면서 선택 화면이
+ * 제거됐다(service-web #74). 되살릴 가능성이 있어 지우지 않았고, 정리 여부는 제출 후 결정한다.
  */
 @Service
 public class BriefingTopicService {
@@ -30,41 +34,45 @@ public class BriefingTopicService {
     /** 주제 1개 길이 상한 — agent {@code GenerationRequest.topics} 항목 상한과 맞춘다. */
     public static final int MAX_TOPIC_LENGTH = 500;
 
+    private static final Logger log = LoggerFactory.getLogger(BriefingTopicService.class);
+
     private final BriefingTopicRepository repository;
     private final InterestService interestService;
+    private final AgentWikiClient wikiClient;
 
-    public BriefingTopicService(BriefingTopicRepository repository, InterestService interestService) {
+    public BriefingTopicService(BriefingTopicRepository repository,
+                                InterestService interestService,
+                                AgentWikiClient wikiClient) {
         this.repository = repository;
         this.interestService = interestService;
+        this.wikiClient = wikiClient;
     }
 
     /**
-     * 아침 브리핑에 실제로 보낼 주제 — <b>폴백 3단계</b> (2026-08-08, 황유림 지적으로 확정).
+     * 아침 브리핑에 실제로 보낼 주제 — <b>폴백 2단계</b> (2026-08-11 (B) 확정).
      *
      * <ol>
-     *   <li>사용자가 미리 고른 주제</li>
-     *   <li>없으면 <b>등록 관심사</b>(온보딩에서 고른 것 + 직접 추가한 것) 최근 {@value #MAX_TOPICS}개</li>
+     *   <li>agent 가 개인 Wiki 맥락을 읽어 고른 주제
+     *       ({@code GET /internal/v1/users/{id}/briefing-topics})</li>
+     *   <li>비면 <b>등록 관심사</b>(온보딩에서 고른 것 + 직접 추가한 것) 최근 {@value #MAX_TOPICS}개</li>
      *   <li>그것도 없으면 빈 목록 → 호출부가 건너뛴다</li>
      * </ol>
      *
-     * <p><b>폴백이 없으면 아침 브리핑이 전면 중단된다.</b> 선택 화면이 나오기 전에는 고른 사람이
-     * 아무도 없고, 나온 뒤에도 설정을 안 건드린 사용자는 계속 못 받는다.
+     * <p><b>1단계는 Wiki 태그 점수 상위 N개가 아니다.</b> 연결 수 상위를 그대로 쓰면 도구·출처가
+     * 주제가 된다(agent-api #21 — 폭염 기사 1건으로 관심사 상위가 `서울`·`온열질환`·`질병관리청`이
+     * 되고 아침 브리핑이 `서울` 로 나갔다. 실측 `DBeaver Community` 1.00). agent 가 후보를 넓게
+     * 받아 맥락을 읽고 고르고, 민감 주제(자살·자해·재난 사망·정치인 실명)를 선정 단계에서 뺀다.
      *
-     * <p><b>2단계에 Wiki 태그 상위 N개를 쓰지 않는다.</b> 저장한 글에서 뽑힌 파편이 상위를
-     * 차지하기 때문이다(agent-api #21 — 폭염 기사 1건으로 관심사 상위가 `서울`·`온열질환`·
-     * `질병관리청`이 되고 아침 브리핑이 `서울` 로 나갔다). 아침은 사용자가 결과를 검토하지 않고
-     * 그냥 받는 경로라 파편이 가장 위험한 자리다. 등록 관심사는 사용자가 직접 고른 값이라
-     * 파편이 섞이지 않는다.
+     * <p><b>폴백이 없으면 아침 브리핑이 전면 중단된다.</b> 위키가 없는 신규 사용자는 1단계가
+     * 항상 비어 있다.
      *
-     * <p><b>이 판단에는 기한이 없다 (2026-08-10 확인).</b> 08-08에 배포됐던 파편 필터는
-     * <b>되돌려졌다</b> — 도구와 함께 삼성전자·SK하이닉스·마이크론 같은 진짜 관심사까지
-     * 사라졌기 때문이다(황유림). 지금은 판정을 기록만 하고 후보에서 빼지 않으며, 기존 데이터
-     * 재빌드도 하지 않기로 했다. 즉 <b>Wiki 태그는 앞으로도 계속 오염된 채로 온다.</b>
-     * "재빌드되면 Wiki 태그로 바꿔도 된다"고 읽지 말 것.
+     * <p><b>agent 장애가 아침을 멈추지 않는다.</b> 호출이 실패하면 등록 관심사로 넘어간다 —
+     * 스케줄러는 전체 사용자를 도는 배치라, 여기서 예외를 올리면 agent 가 흔들릴 때 그날 아침이
+     * 통째로 날아간다. 등록 관심사는 service-db 값이라 agent 와 무관하게 읽힌다.
      */
     @Transactional(readOnly = true)
     public List<String> resolveForMorningBriefing(Long userId) {
-        List<String> selected = get(userId);
+        List<String> selected = selectFromWikiContext(userId);
         if (!selected.isEmpty()) {
             return selected;
         }
@@ -73,6 +81,35 @@ public class BriefingTopicService {
                 .filter(name -> name != null && !name.isBlank())
                 .limit(MAX_TOPICS)
                 .toList();
+    }
+
+    /**
+     * 1단계 — agent 선정. 실패·빈 응답은 <b>빈 목록</b>으로 돌려 폴백에 맡긴다.
+     *
+     * <p>선정 근거({@code reason})를 로그에 남긴다. 결과만 봐서는 왜 그 주제가 뽑혔는지 알 수 없어서,
+     * "아침에 이상한 주제가 나갔다"는 신고가 들어왔을 때 이 줄이 유일한 단서다.
+     */
+    private List<String> selectFromWikiContext(Long userId) {
+        BriefingTopicsSelection selection;
+        try {
+            selection = wikiClient.getBriefingTopics(userId, MAX_TOPICS);
+        } catch (RuntimeException e) {
+            // agent 장애로 그날 아침 전체가 멈추면 안 된다 — 등록 관심사로 넘어간다.
+            log.warn("[BriefingTopic] agent 주제 선정 실패 userId={} — 등록 관심사로 폴백", userId, e);
+            return List.of();
+        }
+        List<String> topics = selection.normalizedTopics();
+        if (topics.isEmpty()) {
+            // 위키가 없거나 고를 만한 주제가 없는 사용자. 정상 상태라 warn 을 남기지 않는다.
+            return List.of();
+        }
+        // 개수는 agent 계약(limit)이 이미 지키지만, 계약이 바뀌어도 요청이 커지지 않게 여기서도 자른다.
+        List<String> limited = topics.size() > MAX_TOPICS
+                ? List.copyOf(topics.subList(0, MAX_TOPICS))
+                : topics;
+        log.info("[BriefingTopic] agent 선정 userId={}, topics={}, 후보={}, 근거={}",
+                userId, limited, selection.candidateCount(), selection.reasonOrEmpty());
+        return limited;
     }
 
     /** 내 선택값 — 미선택이면 빈 목록(404 아님). 화면 진입 시 이 값으로 선택 상태를 복구한다. */

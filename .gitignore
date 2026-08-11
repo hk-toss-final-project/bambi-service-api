@@ -14,3 +14,6 @@ __pycache__/
 coverage/
 .next/
 .gradle/
+
+# Eclipse/VSCode Java 빌드 산출물 — Gradle 은 build/ 를 쓴다.
+bin/
