@@ -27,6 +27,11 @@ import java.util.List;
  * 소라(agent 게이트웨이)가 단계적으로 추가하는 필드라 아직 안 오는 스냅샷이 대부분이다 —
  * 없으면 null 로 관용 파싱한다({@link #normalizedReportType()}). 발행 처리를 절대 깨지 않는다.
  * {@code request_idempotency_key}는 Service의 생성 작업을 Publish 완료로 닫는 연결 키다.
+ *
+ * <p>{@code change_history_enabled} — 이 카드의 {@code body} 가 변경점(Delta) 4단 폼인지
+ * 기존 자유 형식인지 알려주는 신호(2026-08-11 김기용, agent 593ec99). 프론트가 본문 헤더
+ * 문자열을 파싱해 폼을 추측하지 않게 하려고 계약에 넣었다. 필드가 없던 과거 스냅샷은
+ * 전부 자유 형식이라 미도착을 {@code false} 로 다룬다(agent 계약 문서 §4 명시).
  */
 public record PublishItem(
         @JsonProperty("content_id") String contentId,
@@ -47,7 +52,10 @@ public record PublishItem(
         // content_tags·report_type 처럼 단계적 롤아웃 — 안 오면 null(관용). Card.replaceTaxonomyTopics 가 null 을 흡수.
         @JsonProperty("taxonomy_topic_ids") List<String> taxonomyTopicIds,
         @JsonProperty("taxonomy_version") String taxonomyVersion,
-        @JsonProperty("cover_image") CoverImage coverImage) {
+        @JsonProperty("cover_image") CoverImage coverImage,
+        // body 렌더링 규칙 신호(2026-08-11). 필드가 없던 과거 스냅샷은 자유 형식이므로
+        // 미도착 = false 가 맞다 → 박싱하지 않고 primitive 로 받아 Jackson 기본값(false)을 쓴다.
+        @JsonProperty("change_history_enabled") boolean changeHistoryEnabled) {
 
     /** cover_image 도입 전 내부 생성 코드와 테스트가 사용하던 생성자 계약을 유지한다. */
     public PublishItem(
@@ -69,7 +77,31 @@ public record PublishItem(
             String taxonomyVersion) {
         this(contentId, userId, version, snapshotHash, title, summary, body,
                 citations, tags, contentTags, reportType, requestIdempotencyKey,
-                generationTopic, createdAt, taxonomyTopicIds, taxonomyVersion, null);
+                generationTopic, createdAt, taxonomyTopicIds, taxonomyVersion, null, false);
+    }
+
+    /** change_history_enabled 도입 전 생성자 계약을 유지한다(대표 이미지까지만 싣는 호출부). */
+    public PublishItem(
+            String contentId,
+            String userId,
+            Integer version,
+            String snapshotHash,
+            String title,
+            String summary,
+            String body,
+            List<Citation> citations,
+            List<String> tags,
+            List<String> contentTags,
+            String reportType,
+            String requestIdempotencyKey,
+            String generationTopic,
+            OffsetDateTime createdAt,
+            List<String> taxonomyTopicIds,
+            String taxonomyVersion,
+            CoverImage coverImage) {
+        this(contentId, userId, version, snapshotHash, title, summary, body,
+                citations, tags, contentTags, reportType, requestIdempotencyKey,
+                generationTopic, createdAt, taxonomyTopicIds, taxonomyVersion, coverImage, false);
     }
 
     /**

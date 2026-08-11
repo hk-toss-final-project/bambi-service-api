@@ -108,6 +108,53 @@ class PublishProcessingServiceTest {
     }
 
     @Test
+    void change_history_enabled가_오면_리포트에_본문_폼_신호를_저장한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        // 델타 4단 폼으로 만들어진 카드 — 프론트가 이 값으로만 렌더링 규칙을 고른다(김기용 계약 08-11)
+        PublishItem item = new PublishItem(
+                "c1", "1", 1, "hash-1", "제목", "요약", "## 이번에 달라진 점\n\n- 새 사실 [G1]",
+                List.of(), List.of(), List.of(), null, null, null, null, null, null, null, true);
+
+        service.upsert(item);
+
+        ArgumentCaptor<Report> reportCaptor = ArgumentCaptor.forClass(Report.class);
+        verify(reportRepository).save(reportCaptor.capture());
+        assertThat(reportCaptor.getValue().isChangeHistoryEnabled()).isTrue();
+    }
+
+    @Test
+    void 폼_신호가_없는_스냅샷은_자유_형식으로_저장한다() {
+        // 필드 도입 전 스냅샷·기존 생성 경로 → 본문이 자유 형식이므로 false 가 맞다(관용 파싱).
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.upsert(item("c1", 1, "제목", "요약"));
+
+        ArgumentCaptor<Report> reportCaptor = ArgumentCaptor.forClass(Report.class);
+        verify(reportRepository).save(reportCaptor.capture());
+        assertThat(reportCaptor.getValue().isChangeHistoryEnabled()).isFalse();
+    }
+
+    @Test
+    void 본문을_갱신하는_재발행은_폼_신호도_함께_되돌린다() {
+        // report_type 과 정책이 다르다: 폼 신호는 함께 온 body 를 설명하는 값이라 body 와 짝을 유지해야 한다.
+        // 델타 경로가 실패해 자유 형식으로 재발행되면 플래그도 false 로 내려와야 화면이 깨지지 않는다.
+        Card existingCard = Card.fromExternal(1L, "c1", 1, "제목", "요약", null);
+        Report existingReport = Report.fromExternal(1L, "c1", 1, "제목", "요약", "## 이번에 달라진 점");
+        existingReport.applyChangeHistoryEnabled(true);
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingCard));
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
+
+        service.upsert(item("c1", 2, "새 제목", "새 요약"));   // 폼 신호 없는(=자유 형식) 재발행
+
+        assertThat(existingReport.getBody()).isEqualTo("본문-2");
+        assertThat(existingReport.isChangeHistoryEnabled()).isFalse();
+    }
+
+    @Test
     void report_type이_오면_리포트와_카드에_저장하고_알림에도_싣는다() {
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());

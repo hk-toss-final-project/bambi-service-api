@@ -132,12 +132,15 @@ public class PublishProcessingService {
                     userId, item.contentId(), item.version(), item.title(), item.summary(), item.body());
             addCitations(report, item);
             report.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null — 관용)
+            report.applyChangeHistoryEnabled(item.changeHistoryEnabled());   // body 폼 신호(미도착 = false)
             applyCoverImage(report, item);
             return reportRepository.save(report);   // id 확보(카드가 참조)
         }
         report.updateBody(item.version(), item.title(), item.summary(), item.body());
         addCitations(report, item);   // updateBody 가 인용을 비웠으므로 다시 채운다
         report.applyReportType(item.normalizedReportType());   // null 재발행은 기존 유형 유지
+        // 본문을 갈아끼웠으니 폼 신호도 함께 갈아끼운다 — 짝이 어긋나면 화면이 깨진다(reportType 과 정책이 다름).
+        report.applyChangeHistoryEnabled(item.changeHistoryEnabled());
         applyCoverImage(report, item);
         return report;   // dirty checking
     }

@@ -68,6 +68,12 @@ public class Report {
     @Column(name = "cover_image_reference", length = 20)
     private String coverImageReference;
 
+    // body 가 변경점(Delta) 4단 폼인지(V26). 발행 payload 값을 그대로 보존한다.
+    // 계정 설정 users.change_history_enabled(V22)와 다른 값이다 — 저쪽은 "앞으로 어떻게 생성할지",
+    // 이쪽은 "이 본문이 어떤 폼인지". 설정을 끈 뒤에도 과거 델타 리포트는 델타 폼으로 남는다.
+    @Column(name = "change_history_enabled", nullable = false)
+    private boolean changeHistoryEnabled = false;
+
     @OneToMany(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = true)
     @BatchSize(size = 100)
     private List<ReportCitation> citations = new ArrayList<>();
@@ -112,6 +118,16 @@ public class Report {
         if (reportType != null) {
             this.reportType = reportType;
         }
+    }
+
+    /**
+     * 본문 폼 신호 반영(신규·재수신 공통). {@link #applyReportType(String)} 과 달리
+     * <b>항상 덮어쓴다</b> — 이 값은 함께 온 body 를 설명하는 값이라 body 와 짝을 유지해야 한다.
+     * 값이 안 온 재발행(구버전 agent·롤백)은 자유 형식 본문을 보낸 것이므로 false 로 되돌리는 게 맞다.
+     * 여기서 기존 true 를 보존하면 "본문은 자유 형식인데 플래그는 델타" 상태가 되어 화면이 깨진다.
+     */
+    public void applyChangeHistoryEnabled(boolean changeHistoryEnabled) {
+        this.changeHistoryEnabled = changeHistoryEnabled;
     }
 
     /** 대표 이미지와 실제 인용 출처를 함께 교체한다. null 값은 이전 선택을 지운다. */
@@ -162,6 +178,10 @@ public class Report {
 
     public String getReportType() {
         return reportType;
+    }
+
+    public boolean isChangeHistoryEnabled() {
+        return changeHistoryEnabled;
     }
 
     public String getCoverImageUrl() {
