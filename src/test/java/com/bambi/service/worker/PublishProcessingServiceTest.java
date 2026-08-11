@@ -42,7 +42,7 @@ class PublishProcessingServiceTest {
         // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"), null, null, null, null, null);
+                List.of("코스피"), null, null, null, null, null, null, null);
     }
 
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
@@ -88,7 +88,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null, null, null);
+                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null, null, null, null, null);
 
         service.upsert(item);
 
@@ -130,7 +130,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null, null, null);
+                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null, null, null, null, null);
 
         service.upsert(item);
 
@@ -166,6 +166,25 @@ class PublishProcessingServiceTest {
         verify(reportRepository, never()).save(any(Report.class));
         verify(notificationService, never()).notifyReportReady(
                 any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void 신규_카드는_taxonomy_topic_ids_와_version_을_저장한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        // 추천 매칭용 taxonomy_topic_ids + version 이 실린 스냅샷
+        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of("반도체"), null,
+                List.of("ai_ml", "industry"), "1.0.0-draft");
+
+        service.upsert(item);
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getTaxonomyTopicIds())
+                .containsExactlyInAnyOrder("ai_ml", "industry");
+        assertThat(cardCaptor.getValue().getTaxonomyVersion()).isEqualTo("1.0.0-draft");
     }
 
     // ── 사용자 설정(V17) 적용 ──────────────────────────────────

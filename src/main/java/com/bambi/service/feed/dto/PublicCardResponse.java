@@ -23,6 +23,10 @@ public record PublicCardResponse(
         long likeCount,
         boolean liked,
         boolean scrapped,
+        // 추천 매칭(2026-08-11 계약 A안, 2단): 뷰어 관심 topic ∩ 카드 topic(정밀) / category ∩ 카드 topic의 category(넓음).
+        // 서버가 뷰어 기준으로 계산. 게스트·비매칭·롤아웃 전 카드는 빈 목록. 프론트: matchedTopics 우선, 없으면 matchedCategories 로 추천 판정.
+        List<MatchedTopic> matchedTopics,
+        List<MatchedCategory> matchedCategories,
         List<SourceResponse> sources,
         OffsetDateTime createdAt) {
 
@@ -39,8 +43,18 @@ public record PublicCardResponse(
     public record SourceResponse(String title, String url) {
     }
 
+    /** 매칭된 관심 토픽(taxonomy topic_key + 표시명). */
+    public record MatchedTopic(String topicId, String name) {
+    }
+
+    /** 매칭된 관심 카테고리(taxonomy category_key + 표시명). */
+    public record MatchedCategory(String categoryId, String name) {
+    }
+
     public static PublicCardResponse from(Card card, User author, long likeCount,
-                                          boolean liked, boolean scrapped) {
+                                          boolean liked, boolean scrapped,
+                                          List<MatchedTopic> matchedTopics,
+                                          List<MatchedCategory> matchedCategories) {
         List<SourceResponse> sources = card.getSources().stream()
                 .map(s -> new SourceResponse(s.getTitle(), s.getUrl()))
                 .toList();
@@ -54,6 +68,8 @@ public record PublicCardResponse(
                 likeCount,
                 liked,
                 scrapped,
+                matchedTopics == null ? List.of() : matchedTopics,
+                matchedCategories == null ? List.of() : matchedCategories,
                 sources,
                 card.getCreatedAt());
     }

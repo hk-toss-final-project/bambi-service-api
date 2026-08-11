@@ -7,6 +7,9 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.feed.dto.PublicCardResponse;
 import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.follow.FollowRepository;
+import com.bambi.service.interest.InterestRepository;
+import com.bambi.service.interest.taxonomy.InterestTaxonomyService;
+import com.bambi.service.interest.taxonomy.dto.InterestTaxonomyResponse;
 import com.bambi.service.like.LikeRepository;
 import com.bambi.service.report.Report;
 import com.bambi.service.user.User;
@@ -14,6 +17,7 @@ import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,9 +45,21 @@ class FeedServiceTest {
             mock(com.bambi.service.report.ReportRepository.class);
     private final com.bambi.service.scrap.ScrapRepository scrapRepository =
             mock(com.bambi.service.scrap.ScrapRepository.class);
+    private final InterestRepository interestRepository = mock(InterestRepository.class);
+    private final InterestTaxonomyService taxonomyService = mock(InterestTaxonomyService.class);
     private final FeedService service =
             new FeedService(cardRepository, likeRepository, followRepository, userRepository,
-                    reportRepository, scrapRepository);
+                    reportRepository, scrapRepository, interestRepository, taxonomyService);
+
+    /** 매칭 테스트용 최소 taxonomy — category tech {ai_ml, data_cloud}. */
+    private static InterestTaxonomyResponse sampleTaxonomy() {
+        var aiMl = new InterestTaxonomyResponse.Topic("ai_ml", "AI·머신러닝", "AI & ML", "d", 1, List.of());
+        var dataCloud = new InterestTaxonomyResponse.Topic("data_cloud", "데이터·클라우드", "Data", "d", 3, List.of());
+        var tech = new InterestTaxonomyResponse.Category(
+                "tech", "테크·IT", "Tech", "d", "💻", 1, List.of(aiMl, dataCloud));
+        return new InterestTaxonomyResponse("1.0.0-draft", "hash", "ko-KR",
+                java.time.OffsetDateTime.parse("2026-01-01T00:00:00Z"), List.of(tech));
+    }
 
     @Test
     void 게스트도_공개피드를_볼_수_있고_liked_는_전부_false() {
@@ -65,6 +81,60 @@ class FeedServiceTest {
         assertThat(feed.get(0).liked()).isFalse();
         // 게스트는 "내 좋아요" 조회 쿼리를 아예 날리지 않아야 한다
         verify(likeRepository, never()).findLikedCardIds(any(), anyCollection());
+        // 게스트는 추천 매칭도 없다(관심사/taxonomy 조회조차 안 함)
+        assertThat(feed.get(0).matchedTopics()).isEmpty();
+        assertThat(feed.get(0).matchedCategories()).isEmpty();
+        verify(interestRepository, never()).findActiveTopicIds(any());
+    }
+
+    @Test
+    void 추천매칭_뷰어_topic_이_카드_topic_과_겹치면_matchedTopics_와_상위_category_를_채운다() {
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(10L);
+        when(card.getUserId()).thenReturn(2L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(card.getTaxonomyTopicIds()).thenReturn(Set.of("ai_ml"));
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of("ai_ml"));
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of("tech"));
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        assertThat(feed.get(0).matchedTopics()).extracting(PublicCardResponse.MatchedTopic::topicId)
+                .containsExactly("ai_ml");
+        assertThat(feed.get(0).matchedTopics().get(0).name()).isEqualTo("AI·머신러닝");
+        assertThat(feed.get(0).matchedCategories()).extracting(PublicCardResponse.MatchedCategory::categoryId)
+                .containsExactly("tech");
+    }
+
+    @Test
+    void 추천매칭_topic_은_안겹쳐도_같은_category_면_matchedCategories_로_보강한다() {
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(11L);
+        when(card.getUserId()).thenReturn(2L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(card.getTaxonomyTopicIds()).thenReturn(Set.of("data_cloud"));   // 뷰어 topic(ai_ml)과 다름, 같은 tech
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of("ai_ml"));
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of("tech"));
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        assertThat(feed.get(0).matchedTopics()).isEmpty();   // topic 정밀 매칭 없음
+        assertThat(feed.get(0).matchedCategories()).extracting(PublicCardResponse.MatchedCategory::categoryId)
+                .containsExactly("tech");                    // 같은 category(recall 안전망)로 보강
     }
 
     @Test

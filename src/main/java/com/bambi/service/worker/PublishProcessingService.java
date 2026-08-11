@@ -82,6 +82,7 @@ public class PublishProcessingService {
         addSources(card, item);
         card.linkReport(report.getId());
         card.replaceInterestTags(item.interestTags());   // content_tags 우선(없으면 topic 폴백) 통째 교체
+        card.replaceTaxonomyTopics(item.taxonomyVersion(), item.taxonomyTopicIds());   // 추천 매칭용 topic_key(관용)
         card.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null 유지 — 관용)
 
         if (isNew) {

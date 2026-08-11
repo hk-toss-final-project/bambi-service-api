@@ -76,6 +76,18 @@ public class Card {
     @BatchSize(size = 100)
     private Set<String> interestTags = new LinkedHashSet<>();
 
+    // 카드↔taxonomy topic_key (추천 매칭용, V19). agent 발행 스냅샷 taxonomy_topic_ids 에서 채운다.
+    // interest_topics.topic_key 와 같은 어휘. 카드 자유태그(interestTags)와 층위가 다르다(공통 식별자).
+    @ElementCollection
+    @CollectionTable(name = "card_taxonomy_topics", joinColumns = @JoinColumn(name = "card_id"))
+    @Column(name = "topic_id", nullable = false, length = 50)
+    @BatchSize(size = 100)
+    private Set<String> taxonomyTopicIds = new LinkedHashSet<>();
+
+    // 위 topic_id 들이 파생된 taxonomy 버전(롤아웃 전 카드는 null).
+    @Column(name = "taxonomy_version", length = 50)
+    private String taxonomyVersion;
+
     // @BatchSize: 공개피드처럼 fetch join 없이 여러 카드를 페이징 조회할 때, 각 카드의 sources 를
     // 카드당 1쿼리(N+1)가 아니라 IN (…) 한 번으로 묶어 로딩한다(최대 100건). 인메모리 페이지네이션 회피.
     @OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -159,6 +171,23 @@ public class Card {
     }
 
     /**
+     * taxonomy 토픽 매핑을 통째로 교체(발행/재수신 시). content_tags 와 같은 스냅샷에서 오므로
+     * interestTags 와 동일한 replace 시맨틱. version 은 값이 올 때만 갱신(빈 스냅샷이 기존 버전을 지우지 않게).
+     */
+    public void replaceTaxonomyTopics(String taxonomyVersion, java.util.Collection<String> topicIds) {
+        taxonomyTopicIds.clear();
+        if (topicIds != null) {
+            topicIds.stream()
+                    .filter(t -> t != null && !t.isBlank())
+                    .map(String::strip)
+                    .forEach(taxonomyTopicIds::add);
+        }
+        if (taxonomyVersion != null && !taxonomyVersion.isBlank()) {
+            this.taxonomyVersion = taxonomyVersion.strip();
+        }
+    }
+
+    /**
      * 카드 공개설정 변경 (SNS 카드 공개/비공개 스위치).
      * 허용값은 V1 CHECK 제약(PRIVATE/PUBLIC)과 일치. 잘못된 값은 저장 전에 막는다.
      */
@@ -219,6 +248,14 @@ public class Card {
 
     public Set<String> getInterestTags() {
         return interestTags;
+    }
+
+    public Set<String> getTaxonomyTopicIds() {
+        return taxonomyTopicIds;
+    }
+
+    public String getTaxonomyVersion() {
+        return taxonomyVersion;
     }
 
     public OffsetDateTime getCreatedAt() {

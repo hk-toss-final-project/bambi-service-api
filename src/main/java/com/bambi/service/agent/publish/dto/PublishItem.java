@@ -41,7 +41,11 @@ public record PublishItem(
         @JsonProperty("report_type") String reportType,
         @JsonProperty("request_idempotency_key") String requestIdempotencyKey,
         @JsonProperty("generation_topic") String generationTopic,
-        @JsonProperty("created_at") OffsetDateTime createdAt) {
+        @JsonProperty("created_at") OffsetDateTime createdAt,
+        // 추천 매칭용(2026-08-11 계약 A안). 카드가 매핑되는 taxonomy topic_key 집합 + 파생 버전.
+        // content_tags·report_type 처럼 단계적 롤아웃 — 안 오면 null(관용). Card.replaceTaxonomyTopics 가 null 을 흡수.
+        @JsonProperty("taxonomy_topic_ids") List<String> taxonomyTopicIds,
+        @JsonProperty("taxonomy_version") String taxonomyVersion) {
 
     /**
      * 연결 키가 실려 왔는가. 2026-08-10 이전에 이미 생성돼 저장된 Snapshot 은 이 값이
