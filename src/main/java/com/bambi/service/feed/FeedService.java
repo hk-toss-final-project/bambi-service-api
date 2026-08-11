@@ -176,6 +176,11 @@ public class FeedService {
         if (viewerId == null) {
             return Map.of();   // 게스트 → 매칭 없음
         }
+        // lookup 을 먼저 얻는다 — B안(미연결 관심사 번역)이 이걸 써야 해서, 빈 관심사 판정보다 앞이다.
+        TaxonomyLookup lookup = activeTaxonomyLookup();
+        if (lookup == null) {
+            return Map.of();   // 활성 taxonomy 조회 실패 → 매칭 생략(피드는 정상 제공)
+        }
         Set<String> viewerTopics = new HashSet<>(interestRepository.findActiveTopicIds(viewerId));
         // 행동 선호 가중(2026-08-11 확정): 좋아요·북마크한 카드의 topic 도 뷰어 관심으로 간주한다.
         // 신호는 이 2개뿐 — 팔로우는 제외(작성자 관심사가 여러 개라 신호가 모호, 우석 결정).
@@ -183,13 +188,19 @@ public class FeedService {
         // category 는 등록 관심사 것만 유지한다 — 행동 신호까지 category 로 넓히면 과대 매칭된다.
         viewerTopics.addAll(cardRepository.findLikedCardTopicIds(viewerId));
         viewerTopics.addAll(cardRepository.findScrappedCardTopicIds(viewerId));
+        // B안(2026-08-11, 우석 직접 집행): taxonomy 미연결 관심사(직접 입력·Wiki 추가)를
+        // 이름→topic_key 로 번역해 합산 — 이게 없으면 손으로 추가한 관심사는 추천에서 투명인간이다.
+        // 완전일치만 3갈래(정식 이름·keywords·이름의 ·/, 조각), 모호 용어 폐기 — agent #43 과 동일
+        // 원칙·동일 안전핀. 부분 문자열·유사도는 쓰지 않는다(8/5 이름대조 실패와 다른 부류).
+        for (String name : interestRepository.findActiveUnlinkedNames(viewerId)) {
+            String topicKey = lookup.termToTopic().get(normalizeTerm(name));
+            if (topicKey != null) {
+                viewerTopics.add(topicKey);
+            }
+        }
         Set<String> viewerCategories = new HashSet<>(interestRepository.findActiveCategoryIds(viewerId));
         if (viewerTopics.isEmpty() && viewerCategories.isEmpty()) {
-            return Map.of();   // taxonomy 연결 관심사 없음 → 매칭 불가(전부 빈 목록)
-        }
-        TaxonomyLookup lookup = activeTaxonomyLookup();
-        if (lookup == null) {
-            return Map.of();   // 활성 taxonomy 조회 실패 → 매칭 생략(피드는 정상 제공)
+            return Map.of();   // 관심 신호가 하나도 없음 → 매칭 불가(전부 빈 목록)
         }
 
         Map<Long, Matched> result = new HashMap<>();
@@ -236,19 +247,55 @@ public class FeedService {
         Map<String, String> topicToCategory = new HashMap<>();
         Map<String, String> topicNames = new HashMap<>();
         Map<String, String> categoryNames = new HashMap<>();
+        // B안 번역 사전 — 찾을 말(정식 이름·keywords·이름의 ·/, 조각, 전부 정규화) → topic_key.
+        // 한 말이 서로 다른 topic 두 곳에 걸리면 그 말은 버린다(모호하면 안 붙이는 게 낫다 — 우석 안전핀,
+        // agent #43 과 동일. 실측: V11 카탈로그에서 충돌은 keywords 1건뿐).
+        Map<String, String> termToTopic = new HashMap<>();
+        Set<String> ambiguousTerms = new HashSet<>();
         for (InterestTaxonomyResponse.Category category : taxonomy.categories()) {
             categoryNames.put(category.id(), category.name());
             for (InterestTaxonomyResponse.Topic topic : category.topics()) {
                 topicToCategory.put(topic.id(), category.id());
                 topicNames.put(topic.id(), topic.name());
+                registerTerm(termToTopic, ambiguousTerms, topic.name(), topic.id());
+                for (String keyword : topic.keywords()) {
+                    registerTerm(termToTopic, ambiguousTerms, keyword, topic.id());
+                }
+                // 이름 조각 — "AI·머신러닝" → "AI"·"머신러닝". 조각이 1개면 정식 이름과 같아 중복이라 생략.
+                String[] fragments = topic.name().split("[·,]");
+                if (fragments.length > 1) {
+                    for (String fragment : fragments) {
+                        registerTerm(termToTopic, ambiguousTerms, fragment, topic.id());
+                    }
+                }
             }
         }
-        return new TaxonomyLookup(topicToCategory, topicNames, categoryNames);
+        ambiguousTerms.forEach(termToTopic::remove);
+        return new TaxonomyLookup(topicToCategory, topicNames, categoryNames, Map.copyOf(termToTopic));
+    }
+
+    /** 번역 사전 등록 — 같은 말이 다른 topic 에 이미 걸려 있으면 모호로 표시(최종 단계에서 제거). */
+    private static void registerTerm(Map<String, String> termToTopic, Set<String> ambiguousTerms,
+                                     String rawTerm, String topicId) {
+        String term = normalizeTerm(rawTerm);
+        if (term.isEmpty()) {
+            return;
+        }
+        String existing = termToTopic.putIfAbsent(term, topicId);
+        if (existing != null && !existing.equals(topicId)) {
+            ambiguousTerms.add(term);
+        }
+    }
+
+    /** 대조용 정규화 — 앞뒤 공백 제거 + 소문자화(영문 대소문자 차이 흡수, agent #43 casefold 와 짝). */
+    private static String normalizeTerm(String value) {
+        return value == null ? "" : value.strip().toLowerCase(java.util.Locale.ROOT);
     }
 
     private record TaxonomyLookup(Map<String, String> topicToCategory,
                                   Map<String, String> topicNames,
-                                  Map<String, String> categoryNames) {
+                                  Map<String, String> categoryNames,
+                                  Map<String, String> termToTopic) {
     }
 
     /** 게스트(viewerId=null)는 조회 없이 빈 집합 — liked/scrapped 는 전부 false 가 된다. */

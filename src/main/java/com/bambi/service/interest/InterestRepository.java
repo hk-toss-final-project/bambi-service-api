@@ -33,4 +33,12 @@ public interface InterestRepository extends JpaRepository<Interest, Long> {
     @Query("select distinct i.taxonomyCategoryId from Interest i "
             + "where i.userId = :userId and i.deletedAt is null and i.taxonomyCategoryId is not null")
     List<String> findActiveCategoryIds(@Param("userId") Long userId);
+
+    /**
+     * 추천 매칭 B안(2026-08-11) — taxonomy 미연결 관심사(직접 입력·Wiki 추가) 이름 목록.
+     * 이 이름들을 taxonomy 이름·keywords 와 완전일치로 대조해 topic_key 로 번역한다.
+     */
+    @Query("select i.name from Interest i "
+            + "where i.userId = :userId and i.deletedAt is null and i.taxonomyTopicId is null")
+    List<String> findActiveUnlinkedNames(@Param("userId") Long userId);
 }

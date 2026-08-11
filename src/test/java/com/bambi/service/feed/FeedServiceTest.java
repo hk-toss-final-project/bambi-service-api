@@ -51,10 +51,22 @@ class FeedServiceTest {
             new FeedService(cardRepository, likeRepository, followRepository, userRepository,
                     reportRepository, scrapRepository, interestRepository, taxonomyService);
 
-    /** 매칭 테스트용 최소 taxonomy — category tech {ai_ml, data_cloud}. */
+    /** 매칭 테스트용 최소 taxonomy — category tech {ai_ml, data_cloud(keywords=DB)}. */
     private static InterestTaxonomyResponse sampleTaxonomy() {
         var aiMl = new InterestTaxonomyResponse.Topic("ai_ml", "AI·머신러닝", "AI & ML", "d", 1, List.of());
-        var dataCloud = new InterestTaxonomyResponse.Topic("data_cloud", "데이터·클라우드", "Data", "d", 3, List.of());
+        var dataCloud = new InterestTaxonomyResponse.Topic(
+                "data_cloud", "데이터·클라우드", "Data", "d", 3, List.of("DB"));
+        var tech = new InterestTaxonomyResponse.Category(
+                "tech", "테크·IT", "Tech", "d", "💻", 1, List.of(aiMl, dataCloud));
+        return new InterestTaxonomyResponse("1.0.0-draft", "hash", "ko-KR",
+                java.time.OffsetDateTime.parse("2026-01-01T00:00:00Z"), List.of(tech));
+    }
+
+    /** 모호 용어 테스트용 — "AI"가 ai_ml(이름 조각)과 data_cloud(keyword) 양쪽에 걸리는 taxonomy. */
+    private static InterestTaxonomyResponse ambiguousTaxonomy() {
+        var aiMl = new InterestTaxonomyResponse.Topic("ai_ml", "AI·머신러닝", "AI & ML", "d", 1, List.of());
+        var dataCloud = new InterestTaxonomyResponse.Topic(
+                "data_cloud", "데이터·클라우드", "Data", "d", 3, List.of("AI"));
         var tech = new InterestTaxonomyResponse.Category(
                 "tech", "테크·IT", "Tech", "d", "💻", 1, List.of(aiMl, dataCloud));
         return new InterestTaxonomyResponse("1.0.0-draft", "hash", "ko-KR",
@@ -111,6 +123,68 @@ class FeedServiceTest {
         assertThat(feed.get(0).matchedTopics().get(0).name()).isEqualTo("AI·머신러닝");
         assertThat(feed.get(0).matchedCategories()).extracting(PublicCardResponse.MatchedCategory::categoryId)
                 .containsExactly("tech");
+    }
+
+    // ---- B안: taxonomy 미연결(직접 입력) 관심사 번역 (2026-08-11) ----------------
+
+    /** 카드 topic 하나짜리 공개 피드 공통 목업. */
+    private Card feedCardWithTopic(long cardId, String topicKey) {
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(cardId);
+        when(card.getUserId()).thenReturn(2L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(card.getTaxonomyTopicIds()).thenReturn(Set.of(topicKey));
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        return card;
+    }
+
+    @Test
+    void B안_직접입력_관심사가_이름조각_완전일치로_topic_에_번역돼_매칭된다() {
+        feedCardWithTopic(20L, "ai_ml");
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of());       // taxonomy 연결 관심사 없음
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveUnlinkedNames(1L)).thenReturn(List.of("AI"));  // 직접 입력
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        // "AI" = "AI·머신러닝"의 · 조각 완전일치 → ai_ml 로 번역 → 매칭
+        assertThat(feed.get(0).matchedTopics()).extracting(PublicCardResponse.MatchedTopic::topicId)
+                .containsExactly("ai_ml");
+    }
+
+    @Test
+    void B안_keywords_완전일치는_대소문자를_가리지_않는다() {
+        feedCardWithTopic(21L, "data_cloud");
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveUnlinkedNames(1L)).thenReturn(List.of("db"));  // 소문자 입력
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        assertThat(feed.get(0).matchedTopics()).extracting(PublicCardResponse.MatchedTopic::topicId)
+                .containsExactly("data_cloud");   // keywords("DB") 정규화 일치
+    }
+
+    @Test
+    void B안_두_topic_에_걸리는_모호한_말은_번역하지_않는다() {
+        // "AI"가 ai_ml(이름 조각)과 data_cloud(keyword) 양쪽에 걸림 → 폐기(우석 안전핀, agent #43 동일)
+        feedCardWithTopic(22L, "ai_ml");
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveUnlinkedNames(1L)).thenReturn(List.of("AI"));
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(ambiguousTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
+        assertThat(feed.get(0).matchedTopics()).isEmpty();   // 모호 → 안 붙임(엉뚱한 추천 방지)
+        assertThat(feed.get(0).matchedCategories()).isEmpty();
     }
 
     @Test
