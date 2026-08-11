@@ -187,6 +187,24 @@ class PublishProcessingServiceTest {
         assertThat(cardCaptor.getValue().getTaxonomyVersion()).isEqualTo("1.0.0-draft");
     }
 
+    @Test
+    void 빈_topic_목록과_빈_version_은_관용_저장한다() {
+        // 소라 계약: 개인 Wiki만 인용 / taxonomy 밖 주제 / 롤아웃 전 스냅샷 → topic_ids=[] & version="".
+        // report_type 처럼 관용 파싱 — 발행을 깨지 않고 빈 채로 저장돼야 한다.
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of("반도체"), null, List.of(), "");
+
+        service.upsert(item);   // 예외 없이 저장
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getTaxonomyTopicIds()).isEmpty();
+        assertThat(cardCaptor.getValue().getTaxonomyVersion()).isNull();   // 빈 version 은 저장하지 않음
+    }
+
     // ── 사용자 설정(V17) 적용 ──────────────────────────────────
 
     @Test
