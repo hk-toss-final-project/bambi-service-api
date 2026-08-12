@@ -31,9 +31,13 @@ class DevelopmentReportGenerationServiceTest {
     private final GenerationSubmissionService submissionService =
             mock(GenerationSubmissionService.class);
     private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
+    // 기본 mock 은 false → Delta 꺼짐.
+    private final ChangeHistorySettingReader changeHistorySettings =
+            mock(ChangeHistorySettingReader.class);
     private final DevelopmentReportGenerationService service =
             new DevelopmentReportGenerationService(
-                    morningService, submissionService, wikiClient, "interest_news_card");
+                    morningService, submissionService, wikiClient, changeHistorySettings,
+                    "interest_news_card");
 
     @Test
     void 아침_리포트는_공통_생성_서비스를_즉시_호출한다() {
@@ -89,6 +93,38 @@ class DevelopmentReportGenerationServiceTest {
                 .isEqualTo(ErrorCode.INTEREST_NOT_FOUND);
 
         verify(submissionService, never()).submit(any(Long.class), any(), any(), any());
+    }
+
+    @Test
+    void Wiki_관심사_리포트도_계정_설정을_그대로_싣는다() {
+        // 🚨 2026-08-12 요구: 설정을 켜면 **모든 보고서**가 변경점 형식이다. 이 경로는 그전까지
+        // interestBundle 팩토리에 파라미터조차 없어 설정과 무관하게 늘 꺼진 채 나갔다.
+        when(changeHistorySettings.isEnabled(28L)).thenReturn(true);
+        when(wikiClient.getTags(28L)).thenReturn(tags("tag-1", "반도체"));
+        when(submissionService.submit(eq(28L), any(), any(), any()))
+                .thenReturn(new GenerationSubmissionService.Submission("pending-1", "job-1"));
+
+        service.generateWikiInterest(28L, "tag-1");
+
+        ArgumentCaptor<GenerationRequest> request = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(submissionService).submit(eq(28L), request.capture(), any(), any());
+        assertThat(request.getValue().changeHistoryEnabled()).isTrue();
+        assertThat(request.getValue().idempotencyKey()).endsWith("-delta");
+    }
+
+    @Test
+    void Wiki_관심사_리포트는_설정이_꺼지면_플래그를_싣지_않는다() {
+        when(changeHistorySettings.isEnabled(28L)).thenReturn(false);
+        when(wikiClient.getTags(28L)).thenReturn(tags("tag-1", "반도체"));
+        when(submissionService.submit(eq(28L), any(), any(), any()))
+                .thenReturn(new GenerationSubmissionService.Submission("pending-1", "job-1"));
+
+        service.generateWikiInterest(28L, "tag-1");
+
+        ArgumentCaptor<GenerationRequest> request = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(submissionService).submit(eq(28L), request.capture(), any(), any());
+        assertThat(request.getValue().changeHistoryEnabled()).isNull();
+        assertThat(request.getValue().idempotencyKey()).doesNotEndWith("-delta");
     }
 
     private static WikiTagsResponse tags(String tagId, String tag) {

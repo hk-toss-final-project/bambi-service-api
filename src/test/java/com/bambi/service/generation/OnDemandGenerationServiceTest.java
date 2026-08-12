@@ -38,19 +38,13 @@ class OnDemandGenerationServiceTest {
             new GenerationSubmissionService(generationClient, pendingService);
     private final com.bambi.service.interest.InterestService interestService =
             mock(com.bambi.service.interest.InterestService.class);
-    // 계정 Delta 설정 조회용(V22). 기본 mock 은 Optional.empty → 설정 없음 = Delta 꺼짐.
-    private final com.bambi.service.user.UserRepository userRepository =
-            mock(com.bambi.service.user.UserRepository.class);
+    // 계정 Delta 설정 조회용(V22). 기본 mock 은 false → Delta 꺼짐.
+    private final ChangeHistorySettingReader changeHistorySettings =
+            mock(ChangeHistorySettingReader.class);
     private final OnDemandGenerationService service = new OnDemandGenerationService(
-            submissionService, wikiClient, interestService, userRepository,
+            submissionService, wikiClient, interestService, changeHistorySettings,
             "interest_news_card");
 
-    /** 계정 Delta 설정이 주어진 사용자 — findById mock 용. */
-    private static com.bambi.service.user.User userWithDelta(boolean enabled) {
-        com.bambi.service.user.User user = new com.bambi.service.user.User("u@bambi.test", "hash", "유저");
-        user.updateSettings(null, null, enabled);
-        return user;
-    }
 
     /** 앞쪽 태그일수록 score 를 높게 → 대표 관심사 = names[0]. */
     private static WikiTagsResponse tagsWith(String... names) {
@@ -219,7 +213,7 @@ class OnDemandGenerationServiceTest {
     @Test
     @DisplayName("계정 설정이 켜져 있으면 change_history_enabled 를 실어 보낸다 (V22)")
     void accountDeltaOnSendsFlag() {
-        when(userRepository.findById(28L)).thenReturn(java.util.Optional.of(userWithDelta(true)));
+        when(changeHistorySettings.isEnabled(28L)).thenReturn(true);
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
@@ -233,7 +227,7 @@ class OnDemandGenerationServiceTest {
     @Test
     @DisplayName("계정 설정이 꺼져 있으면 플래그를 아예 싣지 않는다 — 기존 요청과 동일")
     void accountDeltaOffOmitsFlag() {
-        when(userRepository.findById(28L)).thenReturn(java.util.Optional.of(userWithDelta(false)));
+        when(changeHistorySettings.isEnabled(28L)).thenReturn(false);
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
@@ -248,7 +242,7 @@ class OnDemandGenerationServiceTest {
     @Test
     @DisplayName("사용자 조회가 비면(탈퇴 등) Delta 는 꺼진 것으로 다룬다 — 비용 큰 경로 임의 활성 금지")
     void missingUserDefaultsDeltaOff() {
-        // userRepository 기본 mock = Optional.empty
+        // changeHistorySettings 기본 mock = false
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
@@ -260,9 +254,7 @@ class OnDemandGenerationServiceTest {
     @Test
     @DisplayName("같은 분에 설정을 바꿔 다시 요청해도 멱등키가 갈려 각각 새 Job 이 된다")
     void deltaGetsItsOwnIdempotencyKey() {
-        when(userRepository.findById(28L)).thenReturn(
-                java.util.Optional.of(userWithDelta(false)),
-                java.util.Optional.of(userWithDelta(true)));
+        when(changeHistorySettings.isEnabled(28L)).thenReturn(false, true);
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 

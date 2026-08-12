@@ -88,14 +88,31 @@ public record GenerationRequest(
     public static GenerationRequest multiTopic(String idempotencyKey, String titleTopic,
                                                List<String> topics, String contentType,
                                                String reportType) {
+        return multiTopic(idempotencyKey, titleTopic, topics, contentType, reportType, false);
+    }
+
+    /**
+     * 변경점(Delta) 추적을 선택할 수 있는 다중 주제 요청.
+     *
+     * <p><b>2026-08-12 이전에는 여기서 Delta 를 항상 꺼뒀다.</b> 당시 주석은 "Delta 와 topics[]
+     * 둘 다 기존 생성 경로를 대체라 어느 쪽이 이기는지 계약에 정의가 없다(agent-api #12/#20)"
+     * 였는데, 그 뒤 agent 가 <b>주제마다 Delta 를 따로 돌려 합치는 경로</b>를 구현하면서
+     * (agent {@code _multi_topic_change_history}: 비교축이 (user_id, topic)이라 주제별로 나눠
+     * 돌린다) 공백이 없어졌다. 근거를 확보한 주제만 비교하고, 실패하면 일반 생성으로 되돌린다.
+     *
+     * <p>그래서 "설정을 켜면 <b>모든 보고서</b>가 변경점 형식"(2026-08-12 여진 요구)을
+     * 아침 브리핑에도 적용할 수 있다.
+     */
+    public static GenerationRequest multiTopic(String idempotencyKey, String titleTopic,
+                                               List<String> topics, String contentType,
+                                               String reportType, boolean changeHistory) {
         if (topics == null || topics.isEmpty()) {
             throw new IllegalArgumentException(
                     "topics 없이 제목용 문구를 topic 으로 보내면 그 문구로 검색된다 — 호출 전에 걸러야 한다.");
         }
-        // 아침 브리핑에는 Delta 를 켜지 않는다. 둘 다 "기존 생성 경로를 대체"라서 어느 쪽이
-        // 이기는지 계약에 정의가 없다(agent-api #12 / #20). 온디맨드에서만 선택한다.
         return new GenerationRequest(idempotencyKey, null, null, titleTopic,
-                List.copyOf(topics), contentType, null, null, null, reportType, null);
+                List.copyOf(topics), contentType, null, null, null, reportType,
+                changeHistory ? Boolean.TRUE : null);
     }
 
     /** 준비 Snapshot 날짜를 고정한 아침 브리핑 다중 주제 요청을 만든다. */
@@ -106,11 +123,24 @@ public record GenerationRequest(
             String contentType,
             String reportType,
             LocalDate briefingDate) {
+        return morningBriefing(
+                idempotencyKey, titleTopic, topics, contentType, reportType, briefingDate, false);
+    }
+
+    /** 변경점(Delta) 설정을 실어 보내는 아침 브리핑 요청. */
+    public static GenerationRequest morningBriefing(
+            String idempotencyKey,
+            String titleTopic,
+            List<String> topics,
+            String contentType,
+            String reportType,
+            LocalDate briefingDate,
+            boolean changeHistory) {
         if (briefingDate == null) {
             throw new IllegalArgumentException("아침 브리핑 생성에는 briefingDate가 필요하다.");
         }
         GenerationRequest request = multiTopic(
-                idempotencyKey, titleTopic, topics, contentType, reportType);
+                idempotencyKey, titleTopic, topics, contentType, reportType, changeHistory);
         return new GenerationRequest(
                 request.idempotencyKey(), request.generationScope(), request.interestId(),
                 request.topic(), request.topics(), request.contentType(), briefingDate,
@@ -124,10 +154,23 @@ public record GenerationRequest(
      */
     public static GenerationRequest interestBundle(String idempotencyKey, String interestId,
                                                     String contentType, String reportType) {
+        return interestBundle(idempotencyKey, interestId, contentType, reportType, false);
+    }
+
+    /**
+     * 변경점(Delta) 설정을 실어 보내는 관심사 리포트 요청.
+     *
+     * <p>2026-08-12 이전에는 이 팩토리에 파라미터 자체가 없어 설정을 켜도 늘 꺼진 채 나갔다
+     * (아침 브리핑과 달리 의도한 제외가 아니라 누락이었다).
+     */
+    public static GenerationRequest interestBundle(String idempotencyKey, String interestId,
+                                                    String contentType, String reportType,
+                                                    boolean changeHistory) {
         if (interestId == null || interestId.isBlank()) {
             throw new IllegalArgumentException("INTEREST_BUNDLE에는 현재 활성 interestId가 필요하다.");
         }
         return new GenerationRequest(idempotencyKey, "INTEREST_BUNDLE", interestId.strip(),
-                null, List.of(), contentType, null, null, null, reportType, null);
+                null, List.of(), contentType, null, null, null, reportType,
+                changeHistory ? Boolean.TRUE : null);
     }
 }

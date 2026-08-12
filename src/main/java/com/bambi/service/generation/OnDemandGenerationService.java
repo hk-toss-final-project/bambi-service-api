@@ -5,8 +5,6 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.generation.dto.GenerationTriggerResponse;
 import com.bambi.service.interest.InterestService;
-import com.bambi.service.user.User;
-import com.bambi.service.user.UserRepository;
 import com.bambi.service.wiki.AgentWikiClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,19 +42,19 @@ public class OnDemandGenerationService {
     private final GenerationSubmissionService submissionService;
     private final AgentWikiClient wikiClient;
     private final InterestService interestService;
-    private final UserRepository userRepository;
+    private final ChangeHistorySettingReader changeHistorySettings;
     private final String contentType;
 
     public OnDemandGenerationService(
             GenerationSubmissionService submissionService,
             AgentWikiClient wikiClient,
             InterestService interestService,
-            UserRepository userRepository,
+            ChangeHistorySettingReader changeHistorySettings,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.submissionService = submissionService;
         this.wikiClient = wikiClient;
         this.interestService = interestService;
-        this.userRepository = userRepository;
+        this.changeHistorySettings = changeHistorySettings;
         this.contentType = contentType;
     }
 
@@ -100,11 +98,11 @@ public class OnDemandGenerationService {
     }
 
     /**
-     * 계정의 Delta 설정 조회 — 탈퇴/미존재 사용자는 꺼짐으로 다룬다(생성 요청을 막을 이유는
-     * 인증 계층이 이미 처리했고, 여기서는 비용 큰 경로를 임의로 켜지 않는 쪽이 안전하다).
+     * 계정의 Delta 설정 조회 — 아침 브리핑·Wiki 관심사 경로와 <b>같은 창구</b>를 쓴다
+     * (2026-08-12, 보고서 종류별로 설정이 갈리지 않게 하려고 공용 컴포넌트로 옮겼다).
      */
     private boolean accountChangeHistoryEnabled(long userId) {
-        return userRepository.findById(userId).map(User::isChangeHistoryEnabled).orElse(false);
+        return changeHistorySettings.isEnabled(userId);
     }
 
     /**

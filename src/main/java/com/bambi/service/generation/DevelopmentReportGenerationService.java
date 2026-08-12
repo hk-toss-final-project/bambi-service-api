@@ -30,16 +30,19 @@ public class DevelopmentReportGenerationService {
     private final MorningBriefingGenerationService morningBriefingGenerationService;
     private final GenerationSubmissionService submissionService;
     private final AgentWikiClient wikiClient;
+    private final ChangeHistorySettingReader changeHistorySettings;
     private final String contentType;
 
     public DevelopmentReportGenerationService(
             MorningBriefingGenerationService morningBriefingGenerationService,
             GenerationSubmissionService submissionService,
             AgentWikiClient wikiClient,
+            ChangeHistorySettingReader changeHistorySettings,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.morningBriefingGenerationService = morningBriefingGenerationService;
         this.submissionService = submissionService;
         this.wikiClient = wikiClient;
+        this.changeHistorySettings = changeHistorySettings;
         this.contentType = contentType;
     }
 
@@ -64,11 +67,16 @@ public class DevelopmentReportGenerationService {
                 .orElseThrow(() -> new ApiException(
                         ErrorCode.INTEREST_NOT_FOUND, "현재 활성 Wiki 관심사가 아닙니다."));
 
+        // 계정 설정을 그대로 싣는다 — 설정을 켜면 모든 보고서가 변경점 형식이어야 한다
+        // (2026-08-12 여진 요구). 이 경로는 그전까지 팩토리에 파라미터조차 없어 늘 꺼져 있었다.
+        boolean changeHistory = changeHistorySettings.isEnabled(userId);
         GenerationRequest request = GenerationRequest.interestBundle(
-                minuteKey("dev-wiki-interest", userId, tagId),
+                MorningBriefingGenerationService.deltaAwareKey(
+                        minuteKey("dev-wiki-interest", userId, tagId), changeHistory),
                 tagId,
                 contentType,
-                GenerationPendingService.REPORT_TYPE_WIKI_INTEREST);
+                GenerationPendingService.REPORT_TYPE_WIKI_INTEREST,
+                changeHistory);
         GenerationSubmissionService.Submission submission = submissionService.submit(
                 userId,
                 request,
